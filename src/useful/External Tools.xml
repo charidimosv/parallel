@@ -1,0 +1,16 @@
+<toolSet name="External Tools">
+  <tool name="mpicc" description="MPI C compiler" showInMainMenu="false" showInEditor="false" showInProject="false" showInSearchPopup="false" disabled="false" useConsole="true" showConsoleOnStdOut="false" showConsoleOnStdErr="false" synchronizeAfterRun="true">
+    <exec>
+      <option name="COMMAND" value="C:\cygwin64\bin\sh.exe" />
+      <option name="PARAMETERS" value="-l -c &quot;cd C:/Users/chvas/CLionProjects/$ModuleName$/$/FileRelativeDir$; mpicc -std=c99 $FileName$ -o $FileNameWithoutExtension$.exe&quot;" />
+      <option name="WORKING_DIRECTORY" value="$ProjectFileDir$" />
+    </exec>
+  </tool>
+  <tool name="mpirunn" description="Runner for MPI" showInMainMenu="false" showInEditor="false" showInProject="false" showInSearchPopup="false" disabled="false" useConsole="true" showConsoleOnStdOut="false" showConsoleOnStdErr="false" synchronizeAfterRun="true">
+    <exec>
+      <option name="COMMAND" value="C:\cygwin64\bin\sh.exe" />
+      <option name="PARAMETERS" value="-l -c &quot;cd C:/Users/chvas/CLionProjects/$ModuleName$/$/FileRelativeDir$; mpirun --hostfile C:/cygwin64/hostfile -np $Prompt$ -bind-to core:overload-allowed $FileNameWithoutAllExtensions$&quot;" />
+      <option name="WORKING_DIRECTORY" value="$ProjectFileDir$" />
+    </exec>
+  </tool>
+</toolSet>
