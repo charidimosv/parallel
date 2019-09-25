@@ -1,0 +1,5 @@
+# Project exclude paths
+/.idea
+/cmake-build-debug/
+/src/mpi/output/
+/src/openmp/output/
