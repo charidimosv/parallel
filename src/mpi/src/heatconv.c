@@ -85,6 +85,7 @@ int main(int argc, char **argv) {
     MPI_Comm cartesian_comm;
     int cartId;
 
+    MPI_Dims_create(commSize, DIMENSIONALITY, topology_dimension);
     MPI_Cart_create(MPI_COMM_WORLD, DIMENSIONALITY, topology_dimension, period, reorder, &cartesian_comm);
     MPI_Comm_rank(cartesian_comm, &cartId);
 
@@ -113,17 +114,17 @@ int main(int argc, char **argv) {
 
     for (currentGrid = 0; currentGrid < 2; ++currentGrid) {
         //North neighbor
-        MPI_Send_init(&grid[currentGrid][1][0], 1, rowType, neighbors[NORTH], currentRank, cartesian_comm, &request[SEND][currentGrid][NORTH]);
-        MPI_Recv_init(&grid[currentGrid][0][0], 1, rowType, neighbors[NORTH], neighbors[NORTH], cartesian_comm, &request[RECEIVE][currentGrid][NORTH]);
+        MPI_Send_init(&grid[currentGrid][1][0], 1, rowType, neighbors[NORTH], SOUTH, cartesian_comm, &request[SEND][currentGrid][NORTH]);
+        MPI_Recv_init(&grid[currentGrid][0][0], 1, rowType, neighbors[NORTH], NORTH, cartesian_comm, &request[RECEIVE][currentGrid][NORTH]);
         //South neighbor
-        MPI_Send_init(&grid[currentGrid][NY_HEAT][0], 1, rowType, neighbors[SOUTH], currentRank, cartesian_comm, &request[SEND][currentGrid][SOUTH]);
-        MPI_Recv_init(&grid[currentGrid][NY_HEAT + 1][0], 1, rowType, neighbors[SOUTH], neighbors[SOUTH], cartesian_comm, &request[RECEIVE][currentGrid][SOUTH]);
+        MPI_Send_init(&grid[currentGrid][NY_HEAT][0], 1, rowType, neighbors[SOUTH], NORTH, cartesian_comm, &request[SEND][currentGrid][SOUTH]);
+        MPI_Recv_init(&grid[currentGrid][NY_HEAT + 1][0], 1, rowType, neighbors[SOUTH], SOUTH, cartesian_comm, &request[RECEIVE][currentGrid][SOUTH]);
         //West neighbor
-        MPI_Send_init(&grid[currentGrid][0][1], 1, columnType, neighbors[WEST], currentRank, cartesian_comm, &request[SEND][currentGrid][WEST]);
-        MPI_Recv_init(&grid[currentGrid][0][0], 1, columnType, neighbors[WEST], neighbors[WEST], cartesian_comm, &request[RECEIVE][currentGrid][WEST]);
+        MPI_Send_init(&grid[currentGrid][0][1], 1, columnType, neighbors[WEST], EAST, cartesian_comm, &request[SEND][currentGrid][WEST]);
+        MPI_Recv_init(&grid[currentGrid][0][0], 1, columnType, neighbors[WEST], WEST, cartesian_comm, &request[RECEIVE][currentGrid][WEST]);
         //East neighbor
-        MPI_Send_init(&grid[currentGrid][0][NX_HEAT], 1, columnType, neighbors[EAST], currentRank, cartesian_comm, &request[SEND][currentGrid][EAST]);
-        MPI_Recv_init(&grid[currentGrid][0][NX_HEAT + 1], 1, columnType, neighbors[EAST], neighbors[EAST], cartesian_comm, &request[RECEIVE][currentGrid][EAST]);
+        MPI_Send_init(&grid[currentGrid][0][NX_HEAT], 1, columnType, neighbors[EAST], WEST, cartesian_comm, &request[SEND][currentGrid][EAST]);
+        MPI_Recv_init(&grid[currentGrid][0][NX_HEAT + 1], 1, columnType, neighbors[EAST], EAST, cartesian_comm, &request[RECEIVE][currentGrid][EAST]);
     }
 
     startTime = MPI_Wtime();
