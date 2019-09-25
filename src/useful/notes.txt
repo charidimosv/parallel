@@ -1,0 +1,6 @@
+Useful info
+-------------
+
+- When specifying a destination process in a send or a receive, you can use the wildcard MPI_PROC_NULL as destination or sender to ignore the call.
+That's very convenient when dealing with whole domains sends and boundary conditions
+

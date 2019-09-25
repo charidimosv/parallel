@@ -1,6 +1,5 @@
 # Project exclude paths
 /.idea
 /cmake-build-debug/
-/src/examples/output/
-/src/mpi/output/
+/src/*/output/
 *.exe
