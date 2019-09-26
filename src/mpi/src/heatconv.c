@@ -152,7 +152,7 @@ int main(int argc, char **argv) {
     MPI_Barrier(cartComm);
     startTime = MPI_Wtime();
 
-#pragma omp parallel
+#pragma omp parallel default(none) private(currentStep, currentGrid, currentX, currentY, currentNeighbor) shared(cartComm, grid, request, convergenceCheck, currentConvergenceCheck, localConvergence, globalConvergence)
     {
         for (currentStep = 0; currentStep < EXEC_STEPS; ++currentStep) {
 
@@ -176,13 +176,12 @@ int main(int argc, char **argv) {
             updateOuter(2, NY_HEAT - 1, 2, &grid[currentGrid][0][0], &grid[1 - currentGrid][0][0]);
 
             if (currentConvergenceCheck) {
-#pragma omp for reduction(&&:localConvergence)
+#pragma omp for schedule(static) collapse(2) reduction(&&:localConvergence)
                 {
                     for (currentX = 0; currentX < NX_HEAT; ++currentX)
                         for (currentY = 0; currentY < NY_HEAT; ++currentY)
                             if (fabs(grid[1 - currentGrid][currentX][currentY] - grid[currentGrid][currentX][currentY]) >= 1e-3) {
-                                localConvergence && = FALSE;
-                                break;
+                                localConvergence = FALSE;
                             }
                 }
             }
