@@ -3,12 +3,6 @@
 #include <math.h>
 #include <mpi.h>
 
-#ifdef _OPENMP
-
-#include <omp.h>
-
-#endif
-
 #define FALSE 0
 #define TRUE 1
 
@@ -91,14 +85,15 @@ int main(int argc, char **argv) {
     MPI_Datatype rowType;
     MPI_Datatype columnType;
 
-    // TODO - find perfect number
-    int PROCESSES_PER_DIM = sqrt(commSize);
-    int topologyDimension[DIMENSIONALITY] = {PROCESSES_PER_DIM, PROCESSES_PER_DIM};
+    int topologyDimension[DIMENSIONALITY] = {0, 0};
     int period[DIMENSIONALITY] = {FALSE, FALSE};
     int reorder = TRUE;
 
-//    MPI_Dims_create(commSize, DIMENSIONALITY, topologyDimension);
+    MPI_Dims_create(commSize, DIMENSIONALITY, topologyDimension);
     MPI_Cart_create(MPI_COMM_WORLD, DIMENSIONALITY, topologyDimension, period, reorder, &cartComm);
+
+    MPI_Cart_shift(cartComm, 0, 1, &neighbors[NORTH], &neighbors[SOUTH]);
+    MPI_Cart_shift(cartComm, 1, 1, &neighbors[WEST], &neighbors[EAST]);
 
     int cartRank;
     MPI_Comm_rank(cartComm, &cartRank);
@@ -106,13 +101,10 @@ int main(int argc, char **argv) {
     int currentCoords[DIMENSIONALITY];
     MPI_Cart_coords(cartComm, commRank, DIMENSIONALITY, currentCoords);
 
-    MPI_Cart_shift(cartComm, 0, 1, &neighbors[NORTH], &neighbors[SOUTH]);
-    MPI_Cart_shift(cartComm, 1, 1, &neighbors[WEST], &neighbors[EAST]);
-
     printf("CommRank: %d, CartRank: %d, Coords: %dx%d. EAST: %d, WEST: %d, SOUTH: %d, NORTH: %d\n",
            commRank, cartRank, currentCoords[0], currentCoords[1], neighbors[EAST], neighbors[WEST], neighbors[SOUTH], neighbors[NORTH]);
 
-    MPI_Type_vector(NY_HEAT + HALO_OFFSET, 1, NX_HEAT + 2, MPI_FLOAT, &columnType);
+    MPI_Type_vector(NY_HEAT + HALO_OFFSET, 1, NX_HEAT + HALO_OFFSET, MPI_FLOAT, &columnType);
     MPI_Type_vector(NX_HEAT + HALO_OFFSET, 1, 1, MPI_FLOAT, &rowType);
     MPI_Type_commit(&columnType);
     MPI_Type_commit(&rowType);
@@ -154,7 +146,7 @@ int main(int argc, char **argv) {
     MPI_Barrier(cartComm);
     startTime = MPI_Wtime();
 
-#pragma omp parallel private(currentStep, currentGrid, currentX, currentY, currentNeighbor)
+#pragma omp parallel private(currentStep, currentNeighbor, currentX, currentY)
     {
         for (currentStep = 0; currentStep < EXEC_STEPS; ++currentStep) {
 
@@ -178,7 +170,7 @@ int main(int argc, char **argv) {
             updateOuter(2, NY_HEAT - 1, 2, &grid[currentGrid][0][0], &grid[1 - currentGrid][0][0]);
 
             if (currentConvergenceCheck) {
-#pragma omp for schedule(static) collapse(2) reduction(&&:localConvergence)
+#pragma omp for schedule(static) collapse(DIMENSIONALITY) reduction(&&:localConvergence)
                 for (currentX = 0; currentX < NX_HEAT; ++currentX)
                     for (currentY = 0; currentY < NY_HEAT; ++currentY)
                         if (fabs(grid[1 - currentGrid][currentX][currentY] - grid[currentGrid][currentX][currentY]) >= 1e-3) {
@@ -204,6 +196,14 @@ int main(int argc, char **argv) {
     endTime = MPI_Wtime();
     printf("That took %f seconds\n", endTime - startTime);
 
+    ////////////////////////////////////////////////////////////////////////////////////////////
+    //////////////                    Free Resources                    ////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////
+
+    MPI_Type_free(&rowType);
+    MPI_Type_free(&columnType);
+    MPI_Comm_free(&cartComm);
+
     //////////////////////////////////////////////////////////////////////////////////////
     //////////////                    Finalize                    ////////////////////////
     //////////////////////////////////////////////////////////////////////////////////////
@@ -215,7 +215,7 @@ int main(int argc, char **argv) {
 inline void updateInner(int start, int end, int ny, float *u1, float *u2) {
     int ix, iy;
 
-#pragma omp for schedule(static) collapse(2)
+#pragma omp for schedule(static) collapse(DIMENSIONALITY)
     for (ix = start; ix <= end; ix++)
         for (iy = 1; iy <= ny - 2; iy++)
             *(u2 + ix * ny + iy) = *(u1 + ix * ny + iy) +
@@ -230,7 +230,7 @@ inline void updateInner(int start, int end, int ny, float *u1, float *u2) {
 inline void updateOuter(int start, int end, int ny, float *u1, float *u2) {
     int ix, iy;
 
-#pragma omp for schedule(static) collapse(2)
+#pragma omp for schedule(static) collapse(DIMENSIONALITY)
     for (ix = start; ix <= end; ix++)
         for (iy = 1; iy <= ny - 2; iy++)
             *(u2 + ix * ny + iy) = *(u1 + ix * ny + iy) +
