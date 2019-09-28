@@ -105,7 +105,7 @@ int main(int argc, char **argv) {
            commRank, cartRank, currentCoords[0], currentCoords[1], neighbors[EAST], neighbors[WEST], neighbors[SOUTH], neighbors[NORTH]);
 
     MPI_Type_vector(NY_HEAT + HALO_OFFSET, 1, NX_HEAT + HALO_OFFSET, MPI_FLOAT, &columnType);
-    MPI_Type_vector(NX_HEAT + HALO_OFFSET, 1, 1, MPI_FLOAT, &rowType);
+    MPI_Type_contiguous(NX_HEAT + HALO_OFFSET,MPI_FLOAT,&rowType);
     MPI_Type_commit(&columnType);
     MPI_Type_commit(&rowType);
 
