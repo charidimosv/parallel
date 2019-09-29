@@ -6,7 +6,6 @@
 #define FALSE 0
 #define TRUE 1
 
-#define DIMENSIONALITY 2
 #define EXEC_STEPS 10000
 #define CONVERGENCE_FREQ_STEPS 100
 
@@ -15,15 +14,16 @@
 #define WEST        2
 #define EAST        3
 
+#define DIMENSIONALITY  2
+#define ROW             0
+#define COLUMN          1
+#define HALO_OFFSET     2
+
 #define SEND        0
 #define RECEIVE     1
 
 #define UAT_MODE 1
 
-#define HALO_OFFSET 2
-
-#define NX_HEAT 20
-#define NY_HEAT 20
 
 struct Parms {
     float cx;
@@ -32,8 +32,6 @@ struct Parms {
 
 
 int main(int argc, char **argv) {
-    void updateInner(), updateOuter();
-
     int commRank;
     int commSize;
 
@@ -42,9 +40,15 @@ int main(int argc, char **argv) {
 
     int version, subversion;
 
-    float grid[2][NX_HEAT + HALO_OFFSET][NY_HEAT + HALO_OFFSET];
-
     int convergenceCheck = 1;
+    int fullProblemSize[DIMENSIONALITY];
+    int subProblemSize[DIMENSIONALITY];
+
+    int currentStep;
+    int currentNeighbor;
+    int currentConvergenceCheck;
+    int currentRow, currentColumn;
+    int currentGrid;
 
     ////////////////////////////////////////////////////////////////////////////////////////////
     //////////////                    MPI Init/Print                    ////////////////////////
@@ -72,6 +76,11 @@ int main(int argc, char **argv) {
         printf("Usage: heat <blocks_per_dimension> <time_steps>\n");
         MPI_Finalize();
         exit(EXIT_FAILURE);
+    } else {
+        fullProblemSize[ROW] = atoi(argv[1]);
+        fullProblemSize[COLUMN] = atoi(argv[2]);
+
+        convergenceCheck = atoi(argv[3]);
     }
 
     ////////////////////////////////////////////////////////////////////////////////////////////
@@ -92,8 +101,8 @@ int main(int argc, char **argv) {
     MPI_Dims_create(commSize, DIMENSIONALITY, topologyDimension);
     MPI_Cart_create(MPI_COMM_WORLD, DIMENSIONALITY, topologyDimension, period, reorder, &cartComm);
 
-    MPI_Cart_shift(cartComm, 0, 1, &neighbors[NORTH], &neighbors[SOUTH]);
-    MPI_Cart_shift(cartComm, 1, 1, &neighbors[WEST], &neighbors[EAST]);
+    MPI_Cart_shift(cartComm, ROW, 1, &neighbors[NORTH], &neighbors[SOUTH]);
+    MPI_Cart_shift(cartComm, COLUMN, 1, &neighbors[WEST], &neighbors[EAST]);
 
     int cartRank;
     MPI_Comm_rank(cartComm, &cartRank);
@@ -101,52 +110,90 @@ int main(int argc, char **argv) {
     int currentCoords[DIMENSIONALITY];
     MPI_Cart_coords(cartComm, commRank, DIMENSIONALITY, currentCoords);
 
-    printf("CommRank: %d, CartRank: %d, Coords: %dx%d. EAST: %d, WEST: %d, SOUTH: %d, NORTH: %d\n",
-           commRank, cartRank, currentCoords[0], currentCoords[1], neighbors[EAST], neighbors[WEST], neighbors[SOUTH], neighbors[NORTH]);
+    //    TODO - check correct splits
+    subProblemSize[ROW] = fullProblemSize[ROW] / topologyDimension[ROW];
+    subProblemSize[COLUMN] = fullProblemSize[COLUMN] / topologyDimension[COLUMN];
 
-    MPI_Type_vector(NY_HEAT + HALO_OFFSET, 1, NX_HEAT + HALO_OFFSET, MPI_FLOAT, &columnType);
-    MPI_Type_contiguous(NX_HEAT + HALO_OFFSET,MPI_FLOAT,&rowType);
-    MPI_Type_commit(&columnType);
+    int totalRows = subProblemSize[ROW] + HALO_OFFSET;
+    int totalColumns = subProblemSize[COLUMN] + HALO_OFFSET;
+
+    float *u1, *u2;
+    float **grid[2];
+    for (currentGrid = 0; currentGrid < 2; ++currentGrid) {
+        grid[currentGrid] = (float **) malloc(sizeof(float *) * (totalRows));
+        for (currentRow = 0; currentRow < totalRows; ++currentRow)
+            grid[currentGrid][currentRow] = (float *) malloc(sizeof(float) * (totalColumns));
+    }
+
+    int splitterCount = 2 * subProblemSize[ROW] + 2 * subProblemSize[COLUMN] - 4;
+    int *rowSplitter = (int *) malloc(sizeof(int) * splitterCount);
+    int *columnSplitter = (int *) malloc(sizeof(int) * splitterCount);
+
+    int tempCounter = 0;
+    for (currentColumn = 1; currentColumn < subProblemSize[COLUMN] + 1; ++currentColumn) {
+        rowSplitter[tempCounter] = 1;
+        columnSplitter[tempCounter++] = currentColumn;
+    }
+    for (currentColumn = 1; currentColumn < subProblemSize[COLUMN] + 1; ++currentColumn) {
+        rowSplitter[tempCounter] = subProblemSize[ROW];
+        columnSplitter[tempCounter++] = currentColumn;
+    }
+    for (currentRow = 2; currentRow < subProblemSize[ROW]; ++currentRow) {
+        rowSplitter[tempCounter] = currentRow;
+        columnSplitter[tempCounter++] = 1;
+    }
+    for (currentRow = 2; currentRow < subProblemSize[ROW]; ++currentRow) {
+        rowSplitter[tempCounter] = currentRow;
+        columnSplitter[tempCounter++] = subProblemSize[COLUMN];
+    }
+
+    printf("Printing boarders:\n");
+    for (tempCounter = 0; tempCounter < splitterCount; ++tempCounter) {
+        printf("\t%dx%d\n", rowSplitter[tempCounter], columnSplitter[tempCounter]);
+    }
+
+    printf("CommRank: %d, CartRank: %d, Coords: %dx%d. EAST: %d, WEST: %d, SOUTH: %d, NORTH: %d. My problem is %dx%d\n",
+           commRank, cartRank, currentCoords[ROW], currentCoords[COLUMN], neighbors[EAST], neighbors[WEST], neighbors[SOUTH], neighbors[NORTH], subProblemSize[ROW],
+           subProblemSize[COLUMN]);
+
+    MPI_Type_vector(subProblemSize[COLUMN], 1, 1, MPI_FLOAT, &rowType);
+    MPI_Type_vector(subProblemSize[ROW], 1, totalColumns, MPI_FLOAT, &columnType);
     MPI_Type_commit(&rowType);
+    MPI_Type_commit(&columnType);
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////
     //////////////                    Prepare send/receive requests                    ////////////////////////
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    int currentGrid = 0;
     for (currentGrid = 0; currentGrid < 2; ++currentGrid) {
-        MPI_Send_init(&grid[currentGrid][1][0], 1, rowType, neighbors[NORTH], SOUTH, cartComm, &request[SEND][currentGrid][NORTH]);
         MPI_Recv_init(&grid[currentGrid][0][0], 1, rowType, neighbors[NORTH], NORTH, cartComm, &request[RECEIVE][currentGrid][NORTH]);
+        MPI_Send_init(&grid[currentGrid][1][0], 1, rowType, neighbors[NORTH], SOUTH, cartComm, &request[SEND][currentGrid][NORTH]);
 
-        MPI_Send_init(&grid[currentGrid][NY_HEAT][0], 1, rowType, neighbors[SOUTH], NORTH, cartComm, &request[SEND][currentGrid][SOUTH]);
-        MPI_Recv_init(&grid[currentGrid][NY_HEAT + 1][0], 1, rowType, neighbors[SOUTH], SOUTH, cartComm, &request[RECEIVE][currentGrid][SOUTH]);
+        MPI_Recv_init(&grid[currentGrid][subProblemSize[ROW] + 1][0], 1, rowType, neighbors[SOUTH], SOUTH, cartComm, &request[RECEIVE][currentGrid][SOUTH]);
+        MPI_Send_init(&grid[currentGrid][subProblemSize[ROW]][0], 1, rowType, neighbors[SOUTH], NORTH, cartComm, &request[SEND][currentGrid][SOUTH]);
 
-        MPI_Send_init(&grid[currentGrid][0][1], 1, columnType, neighbors[WEST], EAST, cartComm, &request[SEND][currentGrid][WEST]);
         MPI_Recv_init(&grid[currentGrid][0][0], 1, columnType, neighbors[WEST], WEST, cartComm, &request[RECEIVE][currentGrid][WEST]);
+        MPI_Send_init(&grid[currentGrid][0][1], 1, columnType, neighbors[WEST], EAST, cartComm, &request[SEND][currentGrid][WEST]);
 
-        MPI_Send_init(&grid[currentGrid][0][NX_HEAT], 1, columnType, neighbors[EAST], WEST, cartComm, &request[SEND][currentGrid][EAST]);
-        MPI_Recv_init(&grid[currentGrid][0][NX_HEAT + 1], 1, columnType, neighbors[EAST], EAST, cartComm, &request[RECEIVE][currentGrid][EAST]);
+        MPI_Recv_init(&grid[currentGrid][0][subProblemSize[COLUMN] + 1], 1, columnType, neighbors[EAST], EAST, cartComm, &request[RECEIVE][currentGrid][EAST]);
+        MPI_Send_init(&grid[currentGrid][0][subProblemSize[COLUMN]], 1, columnType, neighbors[EAST], WEST, cartComm, &request[SEND][currentGrid][EAST]);
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////
     //////////////                    Main loop                    ////////////////////////
     ///////////////////////////////////////////////////////////////////////////////////////
 
-    int currentStep;
-    int currentNeighbor;
-    int currentConvergenceCheck;
-    int currentX, currentY;
-    currentGrid = 0;
-
     double startTime, endTime;
 
+    currentGrid = 0;
     int localConvergence = TRUE;
     int globalConvergence = FALSE;
 
     MPI_Barrier(cartComm);
     startTime = MPI_Wtime();
 
-#pragma omp parallel private(currentStep, currentNeighbor, currentX, currentY)
+//#pragma omp parallel default(none) private(currentStep, currentRow, currentColumn, tempCounter, u1, u2) shared(grid, rowSplitter, columnSplitter, currentConvergenceCheck, convergenceCheck, currentNeighbor, currentGrid, request, cartComm, globalConvergence, localConvergence, totalRows, totalColumns, splitterCount, parms, ompi_mpi_op_land, ompi_mpi_int)
+#pragma omp parallel private(currentStep, currentRow, currentColumn, tempCounter, u1, u2)
     {
         for (currentStep = 0; currentStep < EXEC_STEPS; ++currentStep) {
 
@@ -160,22 +207,73 @@ int main(int argc, char **argv) {
                 }
             }
 
-            updateInner(2, NY_HEAT - 1, 2, &grid[currentGrid][0][0], &grid[1 - currentGrid][0][0]);
+            u1 = &grid[currentGrid][0][0];
+            u2 = &grid[1 - currentGrid][0][0];
+
+            if (currentConvergenceCheck) {
+#pragma omp for schedule(static) collapse(DIMENSIONALITY) reduction(&&:localConvergence)
+                for (currentRow = 2; currentRow < totalRows - 1; currentRow++)
+                    for (currentColumn = 2; currentColumn < totalColumns - 1; currentColumn++) {
+                        *(u2 + currentRow * totalColumns + currentColumn) = *(u1 + currentRow * totalColumns + currentColumn) +
+                                                                            parms.cx * (*(u1 + (currentRow + 1) * totalColumns + currentColumn) +
+                                                                                        *(u1 + (currentRow - 1) * totalColumns + currentColumn) -
+                                                                                        2.0 * *(u1 + currentRow * totalColumns + currentColumn)) +
+                                                                            parms.cy * (*(u1 + currentRow * totalColumns + currentColumn + 1) +
+                                                                                        *(u1 + currentRow * totalColumns + currentColumn - 1) -
+                                                                                        2.0 * *(u1 + currentRow * totalColumns + currentColumn));
+                        if (fabs(*(u2 + currentRow * totalColumns + currentColumn) - *(u1 + currentRow * totalColumns + currentColumn)) >= 1e-3) {
+                            localConvergence = FALSE;
+                        }
+                    }
+            } else {
+#pragma omp for schedule(static) collapse(DIMENSIONALITY)
+                for (currentRow = 2; currentRow < totalRows - 1; currentRow++)
+                    for (currentColumn = 2; currentColumn < totalColumns - 1; currentColumn++) {
+                        *(u2 + currentRow * totalColumns + currentColumn) = *(u1 + currentRow * totalColumns + currentColumn) +
+                                                                            parms.cx * (*(u1 + (currentRow + 1) * totalColumns + currentColumn) +
+                                                                                        *(u1 + (currentRow - 1) * totalColumns + currentColumn) -
+                                                                                        2.0 * *(u1 + currentRow * totalColumns + currentColumn)) +
+                                                                            parms.cy * (*(u1 + currentRow * totalColumns + currentColumn + 1) +
+                                                                                        *(u1 + currentRow * totalColumns + currentColumn - 1) -
+                                                                                        2.0 * *(u1 + currentRow * totalColumns + currentColumn));
+                    }
+            }
 
 #pragma omp single
             {
                 MPI_Waitall(4, request[RECEIVE][currentGrid], MPI_STATUS_IGNORE);
             }
 
-            updateOuter(2, NY_HEAT - 1, 2, &grid[currentGrid][0][0], &grid[1 - currentGrid][0][0]);
-
             if (currentConvergenceCheck) {
-#pragma omp for schedule(static) collapse(DIMENSIONALITY) reduction(&&:localConvergence)
-                for (currentX = 0; currentX < NX_HEAT; ++currentX)
-                    for (currentY = 0; currentY < NY_HEAT; ++currentY)
-                        if (fabs(grid[1 - currentGrid][currentX][currentY] - grid[currentGrid][currentX][currentY]) >= 1e-3) {
-                            localConvergence = FALSE;
-                        }
+#pragma omp for schedule(static) reduction(&&:localConvergence)
+                for (tempCounter = 0; tempCounter < splitterCount; ++tempCounter) {
+                    currentRow = rowSplitter[tempCounter];
+                    currentColumn = columnSplitter[tempCounter];
+                    *(u2 + currentRow * totalColumns + currentColumn) = *(u1 + currentRow * totalColumns + currentColumn) +
+                                                                        parms.cx * (*(u1 + (currentRow + 1) * totalColumns + currentColumn) +
+                                                                                    *(u1 + (currentRow - 1) * totalColumns + currentColumn) -
+                                                                                    2.0 * *(u1 + currentRow * totalColumns + currentColumn)) +
+                                                                        parms.cy * (*(u1 + currentRow * totalColumns + currentColumn + 1) +
+                                                                                    *(u1 + currentRow * totalColumns + currentColumn - 1) -
+                                                                                    2.0 * *(u1 + currentRow * totalColumns + currentColumn));
+                    if (fabs(*(u2 + currentRow * totalColumns + currentColumn) - *(u1 + currentRow * totalColumns + currentColumn)) >= 1e-3) {
+                        localConvergence = FALSE;
+                    }
+                }
+            } else {
+#pragma omp for schedule(static)
+                for (tempCounter = 0; tempCounter < splitterCount; ++tempCounter) {
+                    currentRow = rowSplitter[tempCounter];
+                    currentColumn = columnSplitter[tempCounter];
+                    *(u2 + currentRow * totalColumns + currentColumn) = *(u1 + currentRow * totalColumns + currentColumn) +
+                                                                        parms.cx * (*(u1 + (currentRow + 1) * totalColumns + currentColumn) +
+                                                                                    *(u1 + (currentRow - 1) * totalColumns + currentColumn) -
+                                                                                    2.0 * *(u1 + currentRow * totalColumns + currentColumn)) +
+                                                                        parms.cy * (*(u1 + currentRow * totalColumns + currentColumn + 1) +
+                                                                                    *(u1 + currentRow * totalColumns + currentColumn - 1) -
+                                                                                    2.0 * *(u1 + currentRow * totalColumns + currentColumn));
+
+                }
             }
 
 #pragma omp single
@@ -196,48 +294,19 @@ int main(int argc, char **argv) {
     endTime = MPI_Wtime();
     printf("That took %f seconds\n", endTime - startTime);
 
-    ////////////////////////////////////////////////////////////////////////////////////////////
-    //////////////                    Free Resources                    ////////////////////////
-    ////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////
+//////////////                    Free Resources                    ////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////
 
     MPI_Type_free(&rowType);
     MPI_Type_free(&columnType);
     MPI_Comm_free(&cartComm);
 
-    //////////////////////////////////////////////////////////////////////////////////////
-    //////////////                    Finalize                    ////////////////////////
-    //////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////
+//////////////                    Finalize                    ////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////
 
     MPI_Finalize();
+
     return EXIT_SUCCESS;
-}
-
-inline void updateInner(int start, int end, int ny, float *u1, float *u2) {
-    int ix, iy;
-
-#pragma omp for schedule(static) collapse(DIMENSIONALITY)
-    for (ix = start; ix <= end; ix++)
-        for (iy = 1; iy <= ny - 2; iy++)
-            *(u2 + ix * ny + iy) = *(u1 + ix * ny + iy) +
-                                   parms.cx * (*(u1 + (ix + 1) * ny + iy) +
-                                               *(u1 + (ix - 1) * ny + iy) -
-                                               2.0 * *(u1 + ix * ny + iy)) +
-                                   parms.cy * (*(u1 + ix * ny + iy + 1) +
-                                               *(u1 + ix * ny + iy - 1) -
-                                               2.0 * *(u1 + ix * ny + iy));
-}
-
-inline void updateOuter(int start, int end, int ny, float *u1, float *u2) {
-    int ix, iy;
-
-#pragma omp for schedule(static) collapse(DIMENSIONALITY)
-    for (ix = start; ix <= end; ix++)
-        for (iy = 1; iy <= ny - 2; iy++)
-            *(u2 + ix * ny + iy) = *(u1 + ix * ny + iy) +
-                                   parms.cx * (*(u1 + (ix + 1) * ny + iy) +
-                                               *(u1 + (ix - 1) * ny + iy) -
-                                               2.0 * *(u1 + ix * ny + iy)) +
-                                   parms.cy * (*(u1 + ix * ny + iy + 1) +
-                                               *(u1 + ix * ny + iy - 1) -
-                                               2.0 * *(u1 + ix * ny + iy));
 }
