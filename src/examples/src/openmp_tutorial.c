@@ -12,9 +12,13 @@ int main(int argc, char *argv[]) {
 #pragma omp single
         printf("omp before - thread = %d\n", tid);
 
+        for (i = 0; i < 16; ++i)
+            printf("all for - thread = %d, i = %d\n", tid, i);
+
 #pragma omp for
-        for (i = 0; i < 3; ++i)
+        for (i = 0; i < 16; ++i)
             printf("omp for - thread = %d, i = %d\n", tid, i);
+
 #pragma omp master
         printf("omp after - thread = %d\n", tid);
 

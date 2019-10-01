@@ -4,3 +4,5 @@
 /src/*/output/
 /src/others/
 *.exe
+*.dat
+*.stackdump

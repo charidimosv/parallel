@@ -6,7 +6,7 @@
 #define FALSE           0
 #define TRUE            1
 
-#define EXEC_STEPS      10000
+#define EXEC_STEPS      1000
 #define CONV_FREQ_STEPS 100
 
 #define NORTH           0
@@ -43,7 +43,7 @@ int main(int argc, char **argv) {
 
     int version, subversion;
 
-    int convergenceCheck = 1;
+    int convergenceCheck;
     int fullProblemSize[DIMENSIONALITY];
     int subProblemSize[DIMENSIONALITY];
 
@@ -75,14 +75,19 @@ int main(int argc, char **argv) {
     //////////////                    Argument Check                    //////////////
     //////////////////////////////////////////////////////////////////////////////////
 
-    if (!UAT_MODE && argc != 3) {
-        printf("Usage: heat <blocks_per_dimension> <time_steps>\n");
-        MPI_Finalize();
-        exit(EXIT_FAILURE);
+    if (argc != 3) {
+        if (UAT_MODE) {
+            fullProblemSize[ROW] = 16;
+            fullProblemSize[COLUMN] = 16;
+            convergenceCheck = 0;
+        } else {
+            printf("Usage: heat <blocks_per_dimension> <time_steps>\n");
+            MPI_Finalize();
+            exit(EXIT_FAILURE);
+        }
     } else {
         fullProblemSize[ROW] = atoi(argv[1]);
         fullProblemSize[COLUMN] = atoi(argv[2]);
-
         convergenceCheck = atoi(argv[3]);
     }
 
@@ -96,6 +101,9 @@ int main(int argc, char **argv) {
 
     MPI_Datatype rowType;
     MPI_Datatype columnType;
+
+    MPI_Datatype subgridType;
+    MPI_Datatype fileType;
 
     int topologyDimension[DIMENSIONALITY] = {0, 0};
     int period[DIMENSIONALITY] = {FALSE, FALSE};
@@ -113,12 +121,16 @@ int main(int argc, char **argv) {
     int currentCoords[DIMENSIONALITY];
     MPI_Cart_coords(cartComm, commRank, DIMENSIONALITY, currentCoords);
 
+    if ((fullProblemSize[ROW] % topologyDimension[ROW] || fullProblemSize[COLUMN] % topologyDimension[COLUMN])
+        && (!(fullProblemSize[ROW] % topologyDimension[COLUMN]) && !(fullProblemSize[COLUMN] % topologyDimension[ROW]))) {
+        int tempSize = fullProblemSize[ROW];
+        fullProblemSize[ROW] = fullProblemSize[COLUMN];
+        fullProblemSize[COLUMN] = tempSize;
+    }
+
     if (!(fullProblemSize[ROW] % topologyDimension[ROW]) && !(fullProblemSize[COLUMN] % topologyDimension[COLUMN])) {
         subProblemSize[ROW] = fullProblemSize[ROW] / topologyDimension[ROW];
         subProblemSize[COLUMN] = fullProblemSize[COLUMN] / topologyDimension[COLUMN];
-    } else if (!(fullProblemSize[ROW] % topologyDimension[COLUMN]) && !(fullProblemSize[COLUMN] % topologyDimension[ROW])) {
-        subProblemSize[ROW] = fullProblemSize[ROW] / topologyDimension[COLUMN];
-        subProblemSize[COLUMN] = fullProblemSize[COLUMN] / topologyDimension[ROW];
     } else {
         printf("subProblem creation error:\n\tfullProblemSize: %dx%d\n\ttopologyDimension: %dx%d\n",
                fullProblemSize[ROW], fullProblemSize[COLUMN], topologyDimension[ROW], topologyDimension[COLUMN]);
@@ -126,7 +138,7 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    if (PRINT_MODE)
+    if (PRINT_MODE && commRank == 0)
         printf("subProblem creation:\n\tfullProblemSize: %dx%d\n\ttopologyDimension: %dx%d\n\tsubProblemSize: %dx%d\n",
                fullProblemSize[ROW], fullProblemSize[COLUMN], topologyDimension[ROW], topologyDimension[COLUMN], subProblemSize[ROW], subProblemSize[COLUMN]);
 
@@ -137,6 +149,34 @@ int main(int argc, char **argv) {
     MPI_Type_vector(subProblemSize[ROW], 1, totalColumns, MPI_FLOAT, &columnType);
     MPI_Type_commit(&rowType);
     MPI_Type_commit(&columnType);
+
+    int sizeArray[DIMENSIONALITY];
+    int subSizeArray[DIMENSIONALITY];
+    int startArray[DIMENSIONALITY];
+
+    sizeArray[ROW] = totalRows;
+    sizeArray[COLUMN] = totalColumns;
+
+    subSizeArray[ROW] = subProblemSize[ROW];
+    subSizeArray[COLUMN] = subProblemSize[COLUMN];
+
+    startArray[ROW] = 1;
+    startArray[COLUMN] = 1;
+
+    MPI_Type_create_subarray(DIMENSIONALITY, sizeArray, subSizeArray, startArray, MPI_ORDER_C, MPI_FLOAT, &subgridType);
+    MPI_Type_commit(&subgridType);
+
+    sizeArray[ROW] = fullProblemSize[ROW];
+    sizeArray[COLUMN] = fullProblemSize[COLUMN];
+
+    subSizeArray[ROW] = subProblemSize[ROW];
+    subSizeArray[COLUMN] = subProblemSize[COLUMN];
+
+    startArray[ROW] = currentCoords[ROW] * subSizeArray[ROW];
+    startArray[COLUMN] = currentCoords[COLUMN] * subSizeArray[COLUMN];
+
+    MPI_Type_create_subarray(DIMENSIONALITY, sizeArray, subSizeArray, startArray, MPI_ORDER_C, MPI_FLOAT, &fileType);
+    MPI_Type_commit(&fileType);
 
     ////////////////////////////////////////////////////////////////////////////////////////
     //////////////                    Initialise Main Grid                    //////////////
@@ -151,17 +191,15 @@ int main(int argc, char **argv) {
             grid[currentGrid][currentRow] = &grid[currentGrid][0][currentRow * totalColumns];
     }
 
-    if (UAT_MODE) {
-        int oldRank = cartRank;
-        cartRank = 4;
-        for (currentGrid = 0; currentGrid < 2; ++currentGrid)
-            for (currentRow = 0; currentRow < totalRows; ++currentRow)
-                for (currentColumn = 0; currentColumn < totalColumns; ++currentColumn)
-                    grid[currentGrid][currentRow][currentColumn] = (float) cartRank;
-        cartRank = oldRank;
-    }
+//    if (PRINT_MODE) printTable(grid[0], totalRows, totalColumns);
 
-    if (PRINT_MODE) printTable(grid[0], totalRows, totalColumns);
+    MPI_File fpRead;
+    MPI_File_open(cartComm, "../io/init.dat", MPI_MODE_RDONLY, MPI_INFO_NULL, &fpRead);
+    MPI_File_set_view(fpRead, 0, subgridType, fileType, "native", MPI_INFO_NULL);
+    MPI_File_read_all(fpRead, grid[0][0], 1, subgridType, MPI_STATUS_IGNORE);
+    MPI_File_close(&fpRead);
+
+//    if (PRINT_MODE) printTable(grid[0], totalRows, totalColumns);
 
     for (currentGrid = 0; currentGrid < 2; ++currentGrid) {
         if (neighbors[NORTH] == MPI_PROC_NULL)
@@ -181,7 +219,7 @@ int main(int argc, char **argv) {
                 grid[currentGrid][currentRow][totalColumns - 1] = 0;
     }
 
-    if (PRINT_MODE) printTable(grid[0], totalRows, totalColumns);
+//    if (PRINT_MODE) printTable(grid[0], totalRows, totalColumns);
 
     ///////////////////////////////////////////////////////////////////////////////////////
     //////////////                    Initialise Boarders                    //////////////
@@ -232,18 +270,19 @@ int main(int argc, char **argv) {
     //////////////                    Print Setup                    //////////////
     ///////////////////////////////////////////////////////////////////////////////
 
-    if (PRINT_MODE) {
-        printf("Printing boarders:\n");
-        for (tempCounter = 0; tempCounter < splitterCount; ++tempCounter) {
-            printf("\t%dx%d\n", splitter[ROW][tempCounter], splitter[COLUMN][tempCounter]);
-        }
-    }
+//    if (PRINT_MODE) {
+//        printf("Printing boarders:\n");
+//        for (tempCounter = 0; tempCounter < splitterCount; ++tempCounter) {
+//            printf("\t%dx%d\n", splitter[ROW][tempCounter], splitter[COLUMN][tempCounter]);
+//        }
+//    }
 
-    if (PRINT_MODE) {
-        printf("CommRank: %d, CartRank: %d, Coords: %dx%d. EAST: %d, WEST: %d, SOUTH: %d, NORTH: %d. My problem is %dx%d\n",
-               commRank, cartRank, currentCoords[ROW], currentCoords[COLUMN], neighbors[EAST], neighbors[WEST], neighbors[SOUTH], neighbors[NORTH], subProblemSize[ROW],
-               subProblemSize[COLUMN]);
-    }
+//    if (PRINT_MODE) {
+//        printf("CommRank: %d, CartRank: %d, Coords: %dx%d. EAST: %d, WEST: %d, SOUTH: %d, NORTH: %d. My problem is %dx%d\n",
+//               commRank, cartRank, currentCoords[ROW], currentCoords[COLUMN], neighbors[EAST], neighbors[WEST], neighbors[SOUTH], neighbors[NORTH], subProblemSize[ROW],
+//               subProblemSize[COLUMN]);
+//        printTable(grid[0], totalRows, totalColumns);
+//    }
 
     /////////////////////////////////////////////////////////////////////////////
     //////////////                    Main loop                    //////////////
@@ -273,8 +312,8 @@ int main(int argc, char **argv) {
                 }
             }
 
-            u1 = &grid[currentGrid][0][0];
-            u2 = &grid[1 - currentGrid][0][0];
+            u1 = grid[currentGrid][0];
+            u2 = grid[1 - currentGrid][0];
 
             if (currentConvergenceCheck) {
 #pragma omp for schedule(static) collapse(DIMENSIONALITY) reduction(&&:localConvergence)
@@ -287,9 +326,7 @@ int main(int argc, char **argv) {
                                                                             parms.cy * (*(u1 + currentRow * totalColumns + currentColumn + 1) +
                                                                                         *(u1 + currentRow * totalColumns + currentColumn - 1) -
                                                                                         2.0 * *(u1 + currentRow * totalColumns + currentColumn));
-                        if (fabs(*(u2 + currentRow * totalColumns + currentColumn) - *(u1 + currentRow * totalColumns + currentColumn)) >= 1e-3) {
-                            localConvergence = FALSE;
-                        }
+                        localConvergence = localConvergence && (fabs(*(u2 + currentRow * totalColumns + currentColumn) - *(u1 + currentRow * totalColumns + currentColumn)) >= 1e-5);
                     }
             } else {
 #pragma omp for schedule(static) collapse(DIMENSIONALITY)
@@ -322,9 +359,7 @@ int main(int argc, char **argv) {
                                                                         parms.cy * (*(u1 + currentRow * totalColumns + currentColumn + 1) +
                                                                                     *(u1 + currentRow * totalColumns + currentColumn - 1) -
                                                                                     2.0 * *(u1 + currentRow * totalColumns + currentColumn));
-                    if (fabs(*(u2 + currentRow * totalColumns + currentColumn) - *(u1 + currentRow * totalColumns + currentColumn)) >= 1e-3) {
-                        localConvergence = FALSE;
-                    }
+                    localConvergence = localConvergence && (fabs(*(u2 + currentRow * totalColumns + currentColumn) - *(u1 + currentRow * totalColumns + currentColumn)) >= 1e-5);
                 }
             } else {
 #pragma omp for schedule(static)
@@ -350,7 +385,14 @@ int main(int argc, char **argv) {
                 }
 
                 MPI_Waitall(4, request[SEND][currentGrid], MPI_STATUS_IGNORE);
+
+                if (PRINT_MODE && currentStep % CONV_FREQ_STEPS == 0) {
+                    printf("Step %d:\n", currentStep);
+                    printTable(grid[currentGrid], totalRows, totalColumns);
+                }
                 currentGrid = 1 - currentGrid;
+
+                if (PRINT_MODE && globalConvergence == TRUE) printf("Global Convergence achieved at step:%d\n", currentStep);;
             }
 
             if (globalConvergence == TRUE) break;
@@ -359,6 +401,16 @@ int main(int argc, char **argv) {
 
     endTime = MPI_Wtime();
     printf("That took %f seconds\n", endTime - startTime);
+
+    /////////////////////////////////////////////////////////////////////////////////
+    //////////////                    Write to FIle                    //////////////
+    /////////////////////////////////////////////////////////////////////////////////
+
+    MPI_File fpWrite;
+    MPI_File_open(cartComm, "../io/final.dat", MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &fpWrite);
+    MPI_File_set_view(fpWrite, 0, subgridType, fileType, "native", MPI_INFO_NULL);
+    MPI_File_write_all(fpWrite, grid[0][0], 1, subgridType, MPI_STATUS_IGNORE);
+    MPI_File_close(&fpWrite);
 
     //////////////////////////////////////////////////////////////////////////////////
     //////////////                    Free Resources                    //////////////
@@ -375,6 +427,10 @@ int main(int argc, char **argv) {
 
     MPI_Type_free(&rowType);
     MPI_Type_free(&columnType);
+
+    MPI_Type_free(&subgridType);
+    MPI_Type_free(&fileType);
+
     MPI_Comm_free(&cartComm);
 
     ////////////////////////////////////////////////////////////////////////////
