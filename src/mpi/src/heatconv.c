@@ -23,7 +23,7 @@
 #define RECEIVE         1
 
 #define UAT_MODE        0
-#define PRINT_MODE      1
+#define PRINT_MODE      0
 
 
 struct Parms {
@@ -65,7 +65,7 @@ int main(int argc, char **argv) {
     MPI_Comm_size(MPI_COMM_WORLD, &commSize);
     MPI_Comm_rank(MPI_COMM_WORLD, &commRank);
 
-    if (commRank == 0) {
+    if (PRINT_MODE && commRank == 0) {
         printf("MPI_COMM_WORLD Size: %d\n", commSize);
         printf("MPI version: %d.%d\n", version, subversion);
         printf("MPI processor name: %s\n\n", processorName);
@@ -248,8 +248,10 @@ int main(int argc, char **argv) {
 
     int splitterCount = 2 * subProblemSize[ROW] + 2 * subProblemSize[COLUMN] - 4;
     int *splitter[2];
-    splitter[ROW] = (int *) malloc(sizeof(int) * splitterCount);
-    splitter[COLUMN] = (int *) malloc(sizeof(int) * splitterCount);
+    splitter[0] = (int *) malloc(sizeof(int) * 2 * splitterCount);
+    splitter[1] = (splitter[0] + splitterCount);
+    int *rowSplitter = splitter[0];
+    int *columnSplitter = splitter[1];
 
     int tempCounter = 0;
     for (currentColumn = 1; currentColumn < subProblemSize[COLUMN] + 1; ++currentColumn) {
@@ -376,29 +378,28 @@ int main(int argc, char **argv) {
             if (currentConvergenceCheck) {
 #pragma omp for schedule(static) reduction(&&:localConvergence)
                 for (tempCounter = 0; tempCounter < splitterCount; ++tempCounter) {
-                    currentRow = splitter[ROW][tempCounter];
-                    currentColumn = splitter[COLUMN][tempCounter];
-                    *(u2 + currentRow * totalColumns + currentColumn) = *(u1 + currentRow * totalColumns + currentColumn) +
-                                                                        parms.cx * (*(u1 + (currentRow + 1) * totalColumns + currentColumn) +
-                                                                                    *(u1 + (currentRow - 1) * totalColumns + currentColumn) -
-                                                                                    2.0 * *(u1 + currentRow * totalColumns + currentColumn)) +
-                                                                        parms.cy * (*(u1 + currentRow * totalColumns + currentColumn + 1) +
-                                                                                    *(u1 + currentRow * totalColumns + currentColumn - 1) -
-                                                                                    2.0 * *(u1 + currentRow * totalColumns + currentColumn));
-                    localConvergence = localConvergence && (fabs(*(u2 + currentRow * totalColumns + currentColumn) - *(u1 + currentRow * totalColumns + currentColumn)) < 1e-4);
+                    *(u2 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) =
+                            *(u1 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) +
+                            parms.cx * (*(u1 + ((*(rowSplitter + tempCounter)) + 1) * totalColumns + (*(columnSplitter + tempCounter))) +
+                                        *(u1 + ((*(rowSplitter + tempCounter)) - 1) * totalColumns + (*(columnSplitter + tempCounter))) -
+                                        2.0 * *(u1 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)))) +
+                            parms.cy * (*(u1 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)) + 1) +
+                                        *(u1 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)) - 1) -
+                                        2.0 * *(u1 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))));
+                    localConvergence = localConvergence && (fabs(*(u2 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) -
+                                                                 *(u1 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)))) < 1e-4);
                 }
             } else {
 #pragma omp for schedule(static)
                 for (tempCounter = 0; tempCounter < splitterCount; ++tempCounter) {
-                    currentRow = splitter[ROW][tempCounter];
-                    currentColumn = splitter[COLUMN][tempCounter];
-                    *(u2 + currentRow * totalColumns + currentColumn) = *(u1 + currentRow * totalColumns + currentColumn) +
-                                                                        parms.cx * (*(u1 + (currentRow + 1) * totalColumns + currentColumn) +
-                                                                                    *(u1 + (currentRow - 1) * totalColumns + currentColumn) -
-                                                                                    2.0 * *(u1 + currentRow * totalColumns + currentColumn)) +
-                                                                        parms.cy * (*(u1 + currentRow * totalColumns + currentColumn + 1) +
-                                                                                    *(u1 + currentRow * totalColumns + currentColumn - 1) -
-                                                                                    2.0 * *(u1 + currentRow * totalColumns + currentColumn));
+                    *(u2 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) =
+                            *(u1 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) +
+                            parms.cx * (*(u1 + ((*(rowSplitter + tempCounter)) + 1) * totalColumns + (*(columnSplitter + tempCounter))) +
+                                        *(u1 + ((*(rowSplitter + tempCounter)) - 1) * totalColumns + (*(columnSplitter + tempCounter))) -
+                                        2.0 * *(u1 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)))) +
+                            parms.cy * (*(u1 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)) + 1) +
+                                        *(u1 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)) - 1) -
+                                        2.0 * *(u1 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))));
                 }
             }
 
@@ -426,7 +427,7 @@ int main(int argc, char **argv) {
     endTime = MPI_Wtime();
     MPI_Barrier(cartComm);
 
-    if (PRINT_MODE && cartRank == 0) {
+    if (cartRank == 0) {
         printf("Runtime: %f sec\n", endTime - startTime);
         printf("Convergence:\n\tachieved: %s\n\tstep: %d\n", globalConvergence ? "YES" : "NO", convergenceStep);
     }
@@ -454,7 +455,6 @@ int main(int argc, char **argv) {
     MPI_Comm_free(&cartComm);
 
     free(splitter[ROW]);
-    free(splitter[COLUMN]);
 
     for (currentGrid = 0; currentGrid < 2; ++currentGrid) {
         free(grid[currentGrid][0]);
