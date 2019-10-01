@@ -3,26 +3,27 @@
 #include <math.h>
 #include <mpi.h>
 
-#define FALSE 0
-#define TRUE 1
+#define FALSE           0
+#define TRUE            1
 
-#define EXEC_STEPS 10000
-#define CONVERGENCE_FREQ_STEPS 100
+#define EXEC_STEPS      10000
+#define CONV_FREQ_STEPS 100
 
-#define NORTH       0
-#define SOUTH       1
-#define WEST        2
-#define EAST        3
+#define NORTH           0
+#define SOUTH           1
+#define WEST            2
+#define EAST            3
 
 #define DIMENSIONALITY  2
 #define ROW             0
 #define COLUMN          1
 #define HALO_OFFSET     2
 
-#define SEND        0
-#define RECEIVE     1
+#define SEND            0
+#define RECEIVE         1
 
-#define UAT_MODE 1
+#define UAT_MODE        1
+#define PRINT_MODE      1
 
 
 struct Parms {
@@ -30,6 +31,8 @@ struct Parms {
     float cy;
 } parms = {0.1, 0.1};
 
+
+void printTable(float **grid, int totalRows, int totalColumns);
 
 int main(int argc, char **argv) {
     int commRank;
@@ -110,9 +113,22 @@ int main(int argc, char **argv) {
     int currentCoords[DIMENSIONALITY];
     MPI_Cart_coords(cartComm, commRank, DIMENSIONALITY, currentCoords);
 
-    //    TODO - check correct splits
-    subProblemSize[ROW] = fullProblemSize[ROW] / topologyDimension[ROW];
-    subProblemSize[COLUMN] = fullProblemSize[COLUMN] / topologyDimension[COLUMN];
+    if (!(fullProblemSize[ROW] % topologyDimension[ROW]) && !(fullProblemSize[COLUMN] % topologyDimension[COLUMN])) {
+        subProblemSize[ROW] = fullProblemSize[ROW] / topologyDimension[ROW];
+        subProblemSize[COLUMN] = fullProblemSize[COLUMN] / topologyDimension[COLUMN];
+    } else if (!(fullProblemSize[ROW] % topologyDimension[COLUMN]) && !(fullProblemSize[COLUMN] % topologyDimension[ROW])) {
+        subProblemSize[ROW] = fullProblemSize[ROW] / topologyDimension[COLUMN];
+        subProblemSize[COLUMN] = fullProblemSize[COLUMN] / topologyDimension[ROW];
+    } else {
+        printf("subProblem creation error:\n\tfullProblemSize: %dx%d\n\ttopologyDimension: %dx%d\n",
+               fullProblemSize[ROW], fullProblemSize[COLUMN], topologyDimension[ROW], topologyDimension[COLUMN]);
+        MPI_Finalize();
+        exit(EXIT_FAILURE);
+    }
+
+    if (PRINT_MODE)
+        printf("subProblem creation:\n\tfullProblemSize: %dx%d\n\ttopologyDimension: %dx%d\n\tsubProblemSize: %dx%d\n",
+               fullProblemSize[ROW], fullProblemSize[COLUMN], topologyDimension[ROW], topologyDimension[COLUMN], subProblemSize[ROW], subProblemSize[COLUMN]);
 
     int totalRows = subProblemSize[ROW] + HALO_OFFSET;
     int totalColumns = subProblemSize[COLUMN] + HALO_OFFSET;
@@ -135,10 +151,23 @@ int main(int argc, char **argv) {
             grid[currentGrid][currentRow] = &grid[currentGrid][0][currentRow * totalColumns];
     }
 
+    if (UAT_MODE) {
+        int oldRank = cartRank;
+        cartRank = 4;
+        for (currentGrid = 0; currentGrid < 2; ++currentGrid)
+            for (currentRow = 0; currentRow < totalRows; ++currentRow)
+                for (currentColumn = 0; currentColumn < totalColumns; ++currentColumn)
+                    grid[currentGrid][currentRow][currentColumn] = (float) cartRank;
+        cartRank = oldRank;
+    }
+
+    if (PRINT_MODE) printTable(grid[0], totalRows, totalColumns);
+
     for (currentGrid = 0; currentGrid < 2; ++currentGrid) {
         if (neighbors[NORTH] == MPI_PROC_NULL)
             for (currentColumn = 0; currentColumn < totalColumns; ++currentColumn)
                 grid[currentGrid][0][currentColumn] = 0;
+
         if (neighbors[SOUTH] == MPI_PROC_NULL)
             for (currentColumn = 0; currentColumn < totalColumns; ++currentColumn)
                 grid[currentGrid][totalRows - 1][currentColumn] = 0;
@@ -146,10 +175,13 @@ int main(int argc, char **argv) {
         if (neighbors[WEST] == MPI_PROC_NULL)
             for (currentRow = 0; currentRow < totalRows; ++currentRow)
                 grid[currentGrid][currentRow][0] = 0;
+
         if (neighbors[EAST] == MPI_PROC_NULL)
             for (currentRow = 0; currentRow < totalRows; ++currentRow)
                 grid[currentGrid][currentRow][totalColumns - 1] = 0;
     }
+
+    if (PRINT_MODE) printTable(grid[0], totalRows, totalColumns);
 
     ///////////////////////////////////////////////////////////////////////////////////////
     //////////////                    Initialise Boarders                    //////////////
@@ -184,30 +216,34 @@ int main(int argc, char **argv) {
 
     for (currentGrid = 0; currentGrid < 2; ++currentGrid) {
         MPI_Send_init(&grid[currentGrid][1][1], 1, rowType, neighbors[NORTH], cartRank, cartComm, &request[SEND][currentGrid][NORTH]);
-        MPI_Recv_init(&grid[currentGrid][0][1], 1, rowType, neighbors[NORTH], neighbors[NORTH], cartComm, &request[RECEIVE][currentGrid][NORTH]);
+        MPI_Recv_init(&grid[currentGrid][0][1], 1, rowType, neighbors[NORTH], neighbors[NORTH] == MPI_PROC_NULL ? cartRank : neighbors[NORTH], cartComm, &request[RECEIVE][currentGrid][NORTH]);
 
         MPI_Send_init(&grid[currentGrid][totalRows - 2][1], 1, rowType, neighbors[SOUTH], cartRank, cartComm, &request[SEND][currentGrid][SOUTH]);
-        MPI_Recv_init(&grid[currentGrid][totalRows - 1][1], 1, rowType, neighbors[SOUTH], neighbors[SOUTH], cartComm, &request[RECEIVE][currentGrid][SOUTH]);
+        MPI_Recv_init(&grid[currentGrid][totalRows - 1][1], 1, rowType, neighbors[SOUTH], neighbors[SOUTH] == MPI_PROC_NULL ? cartRank : neighbors[SOUTH], cartComm, &request[RECEIVE][currentGrid][SOUTH]);
 
         MPI_Send_init(&grid[currentGrid][1][1], 1, columnType, neighbors[WEST], cartRank, cartComm, &request[SEND][currentGrid][WEST]);
-        MPI_Recv_init(&grid[currentGrid][1][0], 1, columnType, neighbors[WEST], neighbors[WEST], cartComm, &request[RECEIVE][currentGrid][WEST]);
+        MPI_Recv_init(&grid[currentGrid][1][0], 1, columnType, neighbors[WEST], neighbors[WEST] == MPI_PROC_NULL ? cartRank : neighbors[WEST], cartComm, &request[RECEIVE][currentGrid][WEST]);
 
         MPI_Send_init(&grid[currentGrid][1][totalRows - 2], 1, columnType, neighbors[EAST], cartRank, cartComm, &request[SEND][currentGrid][EAST]);
-        MPI_Recv_init(&grid[currentGrid][1][totalRows - 1], 1, columnType, neighbors[EAST], neighbors[EAST], cartComm, &request[RECEIVE][currentGrid][EAST]);
+        MPI_Recv_init(&grid[currentGrid][1][totalRows - 1], 1, columnType, neighbors[EAST], neighbors[EAST] == MPI_PROC_NULL ? cartRank : neighbors[EAST], cartComm, &request[RECEIVE][currentGrid][EAST]);
     }
 
     ///////////////////////////////////////////////////////////////////////////////
     //////////////                    Print Setup                    //////////////
     ///////////////////////////////////////////////////////////////////////////////
 
-    printf("Printing boarders:\n");
-    for (tempCounter = 0; tempCounter < splitterCount; ++tempCounter) {
-        printf("\t%dx%d\n", splitter[ROW][tempCounter], splitter[COLUMN][tempCounter]);
+    if (PRINT_MODE) {
+        printf("Printing boarders:\n");
+        for (tempCounter = 0; tempCounter < splitterCount; ++tempCounter) {
+            printf("\t%dx%d\n", splitter[ROW][tempCounter], splitter[COLUMN][tempCounter]);
+        }
     }
 
-    printf("CommRank: %d, CartRank: %d, Coords: %dx%d. EAST: %d, WEST: %d, SOUTH: %d, NORTH: %d. My problem is %dx%d\n",
-           commRank, cartRank, currentCoords[ROW], currentCoords[COLUMN], neighbors[EAST], neighbors[WEST], neighbors[SOUTH], neighbors[NORTH], subProblemSize[ROW],
-           subProblemSize[COLUMN]);
+    if (PRINT_MODE) {
+        printf("CommRank: %d, CartRank: %d, Coords: %dx%d. EAST: %d, WEST: %d, SOUTH: %d, NORTH: %d. My problem is %dx%d\n",
+               commRank, cartRank, currentCoords[ROW], currentCoords[COLUMN], neighbors[EAST], neighbors[WEST], neighbors[SOUTH], neighbors[NORTH], subProblemSize[ROW],
+               subProblemSize[COLUMN]);
+    }
 
     /////////////////////////////////////////////////////////////////////////////
     //////////////                    Main loop                    //////////////
@@ -229,7 +265,7 @@ int main(int argc, char **argv) {
 
 #pragma omp single
             {
-                currentConvergenceCheck = convergenceCheck && currentStep % CONVERGENCE_FREQ_STEPS == 0;
+                currentConvergenceCheck = convergenceCheck && currentStep % CONV_FREQ_STEPS == 0;
 
                 for (currentNeighbor = 0; currentNeighbor < 4; ++currentNeighbor) {
                     MPI_Start(&request[SEND][currentGrid][currentNeighbor]);
@@ -348,4 +384,15 @@ int main(int argc, char **argv) {
     MPI_Finalize();
 
     return EXIT_SUCCESS;
+}
+
+void printTable(float **grid, int totalRows, int totalColumns) {
+    printf("\n");
+    for (int currentRow = 0; currentRow < totalRows; ++currentRow) {
+        for (int currentColumn = 0; currentColumn < totalColumns; ++currentColumn) {
+            printf("%.2f\t", grid[currentRow][currentColumn]);
+        }
+        printf("\n");
+    }
+    printf("\n");
 }
