@@ -22,7 +22,7 @@
 #define SEND            0
 #define RECEIVE         1
 
-#define UAT_MODE        1
+#define UAT_MODE        0
 #define PRINT_MODE      1
 
 
@@ -139,7 +139,7 @@ int main(int argc, char **argv) {
     }
 
     if (PRINT_MODE && cartRank == 0)
-        printf("subProblem creation:\n\tfullProblemSize: %dx%d\n\ttopologyDimension: %dx%d\n\tsubProblemSize: %dx%d\n\n",
+        printf("Splitting Problem:\n\tFull Problem Size: %dx%d\n\tTopology Dimension: %dx%d\n\tSub Problem Size: %dx%d\n\n",
                fullProblemSize[ROW], fullProblemSize[COLUMN], topologyDimension[ROW], topologyDimension[COLUMN], subProblemSize[ROW], subProblemSize[COLUMN]);
 
     int totalRows = subProblemSize[ROW] + HALO_OFFSET;
@@ -182,6 +182,11 @@ int main(int argc, char **argv) {
     //////////////                    Initialise Main Grid                    //////////////
     ////////////////////////////////////////////////////////////////////////////////////////
 
+    char inputFileName[256];
+    char outputFileName[256];
+    snprintf(inputFileName, 256, "../io/init_%d_%d.dat", fullProblemSize[ROW], fullProblemSize[COLUMN]);
+    snprintf(outputFileName, 256, "../io/final_%d_%d.dat", fullProblemSize[ROW], fullProblemSize[COLUMN]);
+
     float *u1, *u2;
     float **grid[2];
     for (currentGrid = 0; currentGrid < 2; ++currentGrid) {
@@ -191,15 +196,31 @@ int main(int argc, char **argv) {
             grid[currentGrid][currentRow] = &grid[currentGrid][0][currentRow * totalColumns];
     }
 
-//    if (PRINT_MODE) printTable(grid[0], totalRows, totalColumns);
+//    if (PRINT_MODE && cartRank == 0) printTable(grid[0], totalRows, totalColumns);
 
     MPI_File fpRead;
-    MPI_File_open(cartComm, "../io/init.dat", MPI_MODE_RDONLY, MPI_INFO_NULL, &fpRead);
+    MPI_File_open(cartComm, inputFileName, MPI_MODE_RDONLY, MPI_INFO_NULL, &fpRead);
     MPI_File_set_view(fpRead, 0, subgridType, fileType, "native", MPI_INFO_NULL);
     MPI_File_read_all(fpRead, grid[0][0], 1, subgridType, MPI_STATUS_IGNORE);
     MPI_File_close(&fpRead);
 
-//    if (PRINT_MODE) printTable(grid[0], totalRows, totalColumns);
+    if (UAT_MODE) {
+        for (currentGrid = 0; currentGrid < 2; ++currentGrid) {
+            int temp = 0;
+            for (currentRow = 0; currentRow < totalRows; ++currentRow)
+                for (currentColumn = 0; currentColumn < totalColumns; ++currentColumn)
+                    grid[currentGrid][currentRow][currentColumn] = (float) cartRank;
+        }
+        if (PRINT_MODE && cartRank == 1) printTable(grid[0], totalRows, totalColumns);
+
+        MPI_File fpWrite;
+        MPI_File_open(cartComm, inputFileName, MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &fpWrite);
+        MPI_File_set_view(fpWrite, 0, subgridType, fileType, "native", MPI_INFO_NULL);
+        MPI_File_write_all(fpWrite, grid[0][0], 1, subgridType, MPI_STATUS_IGNORE);
+        MPI_File_close(&fpWrite);
+    }
+
+//    if (PRINT_MODE && cartRank == 0) printTable(grid[0], totalRows, totalColumns);
 
     for (currentGrid = 0; currentGrid < 2; ++currentGrid) {
         if (neighbors[NORTH] == MPI_PROC_NULL)
@@ -219,7 +240,7 @@ int main(int argc, char **argv) {
                 grid[currentGrid][currentRow][totalColumns - 1] = 0;
     }
 
-//    if (PRINT_MODE) printTable(grid[0], totalRows, totalColumns);
+//    if (PRINT_MODE && cartRank == 0) printTable(grid[0], totalRows, totalColumns);
 
     ///////////////////////////////////////////////////////////////////////////////////////
     //////////////                    Initialise Boarders                    //////////////
@@ -254,30 +275,34 @@ int main(int argc, char **argv) {
 
     for (currentGrid = 0; currentGrid < 2; ++currentGrid) {
         MPI_Send_init(&grid[currentGrid][1][1], 1, rowType, neighbors[NORTH], cartRank, cartComm, &request[SEND][currentGrid][NORTH]);
-        MPI_Recv_init(&grid[currentGrid][0][1], 1, rowType, neighbors[NORTH], neighbors[NORTH] == MPI_PROC_NULL ? cartRank : neighbors[NORTH], cartComm, &request[RECEIVE][currentGrid][NORTH]);
+        MPI_Recv_init(&grid[currentGrid][0][1], 1, rowType, neighbors[NORTH], neighbors[NORTH] == MPI_PROC_NULL ? cartRank : neighbors[NORTH], cartComm,
+                      &request[RECEIVE][currentGrid][NORTH]);
 
         MPI_Send_init(&grid[currentGrid][totalRows - 2][1], 1, rowType, neighbors[SOUTH], cartRank, cartComm, &request[SEND][currentGrid][SOUTH]);
-        MPI_Recv_init(&grid[currentGrid][totalRows - 1][1], 1, rowType, neighbors[SOUTH], neighbors[SOUTH] == MPI_PROC_NULL ? cartRank : neighbors[SOUTH], cartComm, &request[RECEIVE][currentGrid][SOUTH]);
+        MPI_Recv_init(&grid[currentGrid][totalRows - 1][1], 1, rowType, neighbors[SOUTH], neighbors[SOUTH] == MPI_PROC_NULL ? cartRank : neighbors[SOUTH], cartComm,
+                      &request[RECEIVE][currentGrid][SOUTH]);
 
         MPI_Send_init(&grid[currentGrid][1][1], 1, columnType, neighbors[WEST], cartRank, cartComm, &request[SEND][currentGrid][WEST]);
-        MPI_Recv_init(&grid[currentGrid][1][0], 1, columnType, neighbors[WEST], neighbors[WEST] == MPI_PROC_NULL ? cartRank : neighbors[WEST], cartComm, &request[RECEIVE][currentGrid][WEST]);
+        MPI_Recv_init(&grid[currentGrid][1][0], 1, columnType, neighbors[WEST], neighbors[WEST] == MPI_PROC_NULL ? cartRank : neighbors[WEST], cartComm,
+                      &request[RECEIVE][currentGrid][WEST]);
 
         MPI_Send_init(&grid[currentGrid][1][totalRows - 2], 1, columnType, neighbors[EAST], cartRank, cartComm, &request[SEND][currentGrid][EAST]);
-        MPI_Recv_init(&grid[currentGrid][1][totalRows - 1], 1, columnType, neighbors[EAST], neighbors[EAST] == MPI_PROC_NULL ? cartRank : neighbors[EAST], cartComm, &request[RECEIVE][currentGrid][EAST]);
+        MPI_Recv_init(&grid[currentGrid][1][totalRows - 1], 1, columnType, neighbors[EAST], neighbors[EAST] == MPI_PROC_NULL ? cartRank : neighbors[EAST], cartComm,
+                      &request[RECEIVE][currentGrid][EAST]);
     }
 
     ///////////////////////////////////////////////////////////////////////////////
     //////////////                    Print Setup                    //////////////
     ///////////////////////////////////////////////////////////////////////////////
 
-//    if (PRINT_MODE) {
+//    if (PRINT_MODE && cartRank == 0) {
 //        printf("Printing boarders:\n");
 //        for (tempCounter = 0; tempCounter < splitterCount; ++tempCounter) {
 //            printf("\t%dx%d\n", splitter[ROW][tempCounter], splitter[COLUMN][tempCounter]);
 //        }
 //    }
 
-//    if (PRINT_MODE) {
+//    if (PRINT_MODE && cartRank == 0) {
 //        printf("CommRank: %d, CartRank: %d, Coords: %dx%d. EAST: %d, WEST: %d, SOUTH: %d, NORTH: %d. My problem is %dx%d\n",
 //               commRank, cartRank, currentCoords[ROW], currentCoords[COLUMN], neighbors[EAST], neighbors[WEST], neighbors[SOUTH], neighbors[NORTH], subProblemSize[ROW],
 //               subProblemSize[COLUMN]);
@@ -293,6 +318,7 @@ int main(int argc, char **argv) {
     currentGrid = 0;
     int localConvergence = TRUE;
     int globalConvergence = FALSE;
+    int convergenceStep = -1;
 
     MPI_Barrier(cartComm);
     startTime = MPI_Wtime();
@@ -380,7 +406,6 @@ int main(int argc, char **argv) {
             {
                 if (currentConvergenceCheck) {
                     MPI_Allreduce(&localConvergence, &globalConvergence, 1, MPI_INT, MPI_LAND, cartComm);
-//                if (globalConvergence == TRUE) printf("Step: %d, localConvergence: %d, globalConvergence: %d\n", currentStep, localConvergence, globalConvergence);
                     localConvergence = TRUE;
                 }
 
@@ -388,7 +413,13 @@ int main(int argc, char **argv) {
                 currentGrid = 1 - currentGrid;
             }
 
-            if (globalConvergence == TRUE) break;
+            if (globalConvergence == TRUE) {
+#pragma omp single
+                {
+                    convergenceStep = currentStep;
+                }
+                break;
+            }
         }
     }
 
@@ -396,8 +427,8 @@ int main(int argc, char **argv) {
     MPI_Barrier(cartComm);
 
     if (PRINT_MODE && cartRank == 0) {
-        printf("It took: %f sec\n", endTime - startTime);
-        printf("Global Convergence achieved: %s\n", globalConvergence ? "YES" : "NO");
+        printf("Runtime: %f sec\n", endTime - startTime);
+        printf("Convergence:\n\tachieved: %s\n\tstep: %d\n", globalConvergence ? "YES" : "NO", convergenceStep);
     }
 
     /////////////////////////////////////////////////////////////////////////////////
@@ -405,7 +436,7 @@ int main(int argc, char **argv) {
     /////////////////////////////////////////////////////////////////////////////////
 
     MPI_File fpWrite;
-    MPI_File_open(cartComm, "../io/final.dat", MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &fpWrite);
+    MPI_File_open(cartComm, outputFileName, MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &fpWrite);
     MPI_File_set_view(fpWrite, 0, subgridType, fileType, "native", MPI_INFO_NULL);
     MPI_File_write_all(fpWrite, grid[0][0], 1, subgridType, MPI_STATUS_IGNORE);
     MPI_File_close(&fpWrite);
