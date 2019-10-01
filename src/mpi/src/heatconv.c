@@ -6,8 +6,8 @@
 #define FALSE           0
 #define TRUE            1
 
-#define EXEC_STEPS      1000
-#define CONV_FREQ_STEPS 100
+#define EXEC_STEPS      10000
+#define CONV_FREQ_STEPS 10
 
 #define NORTH           0
 #define SOUTH           1
@@ -75,11 +75,11 @@ int main(int argc, char **argv) {
     //////////////                    Argument Check                    //////////////
     //////////////////////////////////////////////////////////////////////////////////
 
-    if (argc != 3) {
+    if (argc != 4) {
         if (UAT_MODE) {
             fullProblemSize[ROW] = 16;
             fullProblemSize[COLUMN] = 16;
-            convergenceCheck = 0;
+            convergenceCheck = 1;
         } else {
             printf("Usage: heat <blocks_per_dimension> <time_steps>\n");
             MPI_Finalize();
@@ -138,8 +138,8 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    if (PRINT_MODE && commRank == 0)
-        printf("subProblem creation:\n\tfullProblemSize: %dx%d\n\ttopologyDimension: %dx%d\n\tsubProblemSize: %dx%d\n",
+    if (PRINT_MODE && cartRank == 0)
+        printf("subProblem creation:\n\tfullProblemSize: %dx%d\n\ttopologyDimension: %dx%d\n\tsubProblemSize: %dx%d\n\n",
                fullProblemSize[ROW], fullProblemSize[COLUMN], topologyDimension[ROW], topologyDimension[COLUMN], subProblemSize[ROW], subProblemSize[COLUMN]);
 
     int totalRows = subProblemSize[ROW] + HALO_OFFSET;
@@ -307,8 +307,8 @@ int main(int argc, char **argv) {
                 currentConvergenceCheck = convergenceCheck && currentStep % CONV_FREQ_STEPS == 0;
 
                 for (currentNeighbor = 0; currentNeighbor < 4; ++currentNeighbor) {
-                    MPI_Start(&request[SEND][currentGrid][currentNeighbor]);
                     MPI_Start(&request[RECEIVE][currentGrid][currentNeighbor]);
+                    MPI_Start(&request[SEND][currentGrid][currentNeighbor]);
                 }
             }
 
@@ -326,7 +326,7 @@ int main(int argc, char **argv) {
                                                                             parms.cy * (*(u1 + currentRow * totalColumns + currentColumn + 1) +
                                                                                         *(u1 + currentRow * totalColumns + currentColumn - 1) -
                                                                                         2.0 * *(u1 + currentRow * totalColumns + currentColumn));
-                        localConvergence = localConvergence && (fabs(*(u2 + currentRow * totalColumns + currentColumn) - *(u1 + currentRow * totalColumns + currentColumn)) >= 1e-5);
+                        localConvergence = localConvergence && (fabs(*(u2 + currentRow * totalColumns + currentColumn) - *(u1 + currentRow * totalColumns + currentColumn)) < 1e-4);
                     }
             } else {
 #pragma omp for schedule(static) collapse(DIMENSIONALITY)
@@ -359,7 +359,7 @@ int main(int argc, char **argv) {
                                                                         parms.cy * (*(u1 + currentRow * totalColumns + currentColumn + 1) +
                                                                                     *(u1 + currentRow * totalColumns + currentColumn - 1) -
                                                                                     2.0 * *(u1 + currentRow * totalColumns + currentColumn));
-                    localConvergence = localConvergence && (fabs(*(u2 + currentRow * totalColumns + currentColumn) - *(u1 + currentRow * totalColumns + currentColumn)) >= 1e-5);
+                    localConvergence = localConvergence && (fabs(*(u2 + currentRow * totalColumns + currentColumn) - *(u1 + currentRow * totalColumns + currentColumn)) < 1e-4);
                 }
             } else {
 #pragma omp for schedule(static)
@@ -373,7 +373,6 @@ int main(int argc, char **argv) {
                                                                         parms.cy * (*(u1 + currentRow * totalColumns + currentColumn + 1) +
                                                                                     *(u1 + currentRow * totalColumns + currentColumn - 1) -
                                                                                     2.0 * *(u1 + currentRow * totalColumns + currentColumn));
-
                 }
             }
 
@@ -381,18 +380,12 @@ int main(int argc, char **argv) {
             {
                 if (currentConvergenceCheck) {
                     MPI_Allreduce(&localConvergence, &globalConvergence, 1, MPI_INT, MPI_LAND, cartComm);
+//                if (globalConvergence == TRUE) printf("Step: %d, localConvergence: %d, globalConvergence: %d\n", currentStep, localConvergence, globalConvergence);
                     localConvergence = TRUE;
                 }
 
                 MPI_Waitall(4, request[SEND][currentGrid], MPI_STATUS_IGNORE);
-
-                if (PRINT_MODE && currentStep % CONV_FREQ_STEPS == 0) {
-                    printf("Step %d:\n", currentStep);
-                    printTable(grid[currentGrid], totalRows, totalColumns);
-                }
                 currentGrid = 1 - currentGrid;
-
-                if (PRINT_MODE && globalConvergence == TRUE) printf("Global Convergence achieved at step:%d\n", currentStep);;
             }
 
             if (globalConvergence == TRUE) break;
@@ -400,7 +393,12 @@ int main(int argc, char **argv) {
     }
 
     endTime = MPI_Wtime();
-    printf("That took %f seconds\n", endTime - startTime);
+    MPI_Barrier(cartComm);
+
+    if (PRINT_MODE && cartRank == 0) {
+        printf("It took: %f sec\n", endTime - startTime);
+        printf("Global Convergence achieved: %s\n", globalConvergence ? "YES" : "NO");
+    }
 
     /////////////////////////////////////////////////////////////////////////////////
     //////////////                    Write to FIle                    //////////////
@@ -416,15 +414,6 @@ int main(int argc, char **argv) {
     //////////////                    Free Resources                    //////////////
     //////////////////////////////////////////////////////////////////////////////////
 
-    free(splitter[ROW]);
-    free(splitter[COLUMN]);
-
-    for (currentGrid = 0; currentGrid < 2; ++currentGrid) {
-        for (currentRow = 0; currentRow < totalRows; ++currentRow)
-            free(grid[currentGrid][currentRow]);
-        free(grid[currentGrid]);
-    }
-
     MPI_Type_free(&rowType);
     MPI_Type_free(&columnType);
 
@@ -432,6 +421,14 @@ int main(int argc, char **argv) {
     MPI_Type_free(&fileType);
 
     MPI_Comm_free(&cartComm);
+
+    free(splitter[ROW]);
+    free(splitter[COLUMN]);
+
+    for (currentGrid = 0; currentGrid < 2; ++currentGrid) {
+        free(grid[currentGrid][0]);
+        free(grid[currentGrid]);
+    }
 
     ////////////////////////////////////////////////////////////////////////////
     //////////////                    Finalize                    //////////////
@@ -446,7 +443,7 @@ void printTable(float **grid, int totalRows, int totalColumns) {
     printf("\n");
     for (int currentRow = 0; currentRow < totalRows; ++currentRow) {
         for (int currentColumn = 0; currentColumn < totalColumns; ++currentColumn) {
-            printf("%.2f\t", grid[currentRow][currentColumn]);
+            printf("%.5f\t", grid[currentRow][currentColumn]);
         }
         printf("\n");
     }
