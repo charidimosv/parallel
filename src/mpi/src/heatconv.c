@@ -34,6 +34,8 @@ struct Parms {
 
 void printTable(float **grid, int totalRows, int totalColumns);
 
+void cleanUp(MPI_Comm *cartComm, MPI_Datatype *rowType, MPI_Datatype *columnType, MPI_Datatype *subgridType, MPI_Datatype *fileType, float ***grid, int **splitter);
+
 int main(int argc, char **argv) {
     int commRank;
     int commSize;
@@ -43,7 +45,8 @@ int main(int argc, char **argv) {
 
     int version, subversion;
 
-    int convergenceCheck;
+    int createData = 0;
+    int convergenceCheck = 0;
     int fullProblemSize[DIMENSIONALITY];
     int subProblemSize[DIMENSIONALITY];
 
@@ -75,20 +78,24 @@ int main(int argc, char **argv) {
     //////////////                    Argument Check                    //////////////
     //////////////////////////////////////////////////////////////////////////////////
 
-    if (argc != 4) {
+    if (argc == 4) {
+        fullProblemSize[ROW] = atoi(argv[1]);
+        fullProblemSize[COLUMN] = atoi(argv[2]);
+        convergenceCheck = atoi(argv[3]);
+    } else if (argc == 3) {
+        fullProblemSize[ROW] = atoi(argv[1]);
+        fullProblemSize[COLUMN] = atoi(argv[2]);
+        createData = 1;
+    } else {
         if (UAT_MODE) {
             fullProblemSize[ROW] = 16;
             fullProblemSize[COLUMN] = 16;
             convergenceCheck = 1;
         } else {
-            printf("Usage: heat <blocks_per_dimension> <time_steps>\n");
+            printf("Usage: heatconv <ROWS> <COLUMNS> <CONVERGENCE_FLAG>\n");
             MPI_Finalize();
             exit(EXIT_FAILURE);
         }
-    } else {
-        fullProblemSize[ROW] = atoi(argv[1]);
-        fullProblemSize[COLUMN] = atoi(argv[2]);
-        convergenceCheck = atoi(argv[3]);
     }
 
     //////////////////////////////////////////////////////////////////////////////////
@@ -184,7 +191,7 @@ int main(int argc, char **argv) {
 
     char inputFileName[256];
     char outputFileName[256];
-    snprintf(inputFileName, 256, "../io/init_%d_%d.dat", fullProblemSize[ROW], fullProblemSize[COLUMN]);
+    snprintf(inputFileName, 256, "../io/initial_%d_%d.dat", fullProblemSize[ROW], fullProblemSize[COLUMN]);
     snprintf(outputFileName, 256, "../io/final_%d_%d.dat", fullProblemSize[ROW], fullProblemSize[COLUMN]);
 
     float *u1, *u2;
@@ -196,6 +203,28 @@ int main(int argc, char **argv) {
             grid[currentGrid][currentRow] = &grid[currentGrid][0][currentRow * totalColumns];
     }
 
+    if (createData && commSize == 1) {
+        for (currentRow = 0; currentRow < totalRows; currentRow++)
+            for (currentColumn = 0; currentColumn < totalColumns; currentColumn++) {
+                if (currentRow == 0 || currentColumn == 0 || currentRow == totalRows - 1 || currentColumn == totalColumns - 1)
+                    grid[0][currentRow][currentColumn] = 0;
+                else
+                    grid[0][currentRow][currentColumn] = (float) ((currentRow - 1) * (totalRows - currentRow - 2) * (currentColumn - 1) * (totalColumns - currentColumn - 2));
+            }
+        if (PRINT_MODE) printTable(grid[0], totalRows, totalColumns);
+
+        MPI_File fpWrite;
+        MPI_File_open(cartComm, inputFileName, MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &fpWrite);
+        MPI_File_set_view(fpWrite, 0, subgridType, fileType, "native", MPI_INFO_NULL);
+        MPI_File_write_all(fpWrite, grid[0][0], 1, subgridType, MPI_STATUS_IGNORE);
+        MPI_File_close(&fpWrite);
+
+        cleanUp(&cartComm, &rowType, &columnType, &subgridType, &fileType, grid, 0);
+
+        MPI_Finalize();
+        return EXIT_SUCCESS;
+    }
+
 //    if (PRINT_MODE && cartRank == 0) printTable(grid[0], totalRows, totalColumns);
 
     MPI_File fpRead;
@@ -203,22 +232,6 @@ int main(int argc, char **argv) {
     MPI_File_set_view(fpRead, 0, subgridType, fileType, "native", MPI_INFO_NULL);
     MPI_File_read_all(fpRead, grid[0][0], 1, subgridType, MPI_STATUS_IGNORE);
     MPI_File_close(&fpRead);
-
-    if (UAT_MODE) {
-        for (currentGrid = 0; currentGrid < 2; ++currentGrid) {
-            int temp = 0;
-            for (currentRow = 0; currentRow < totalRows; ++currentRow)
-                for (currentColumn = 0; currentColumn < totalColumns; ++currentColumn)
-                    grid[currentGrid][currentRow][currentColumn] = (float) cartRank;
-        }
-        if (PRINT_MODE && cartRank == 1) printTable(grid[0], totalRows, totalColumns);
-
-        MPI_File fpWrite;
-        MPI_File_open(cartComm, inputFileName, MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &fpWrite);
-        MPI_File_set_view(fpWrite, 0, subgridType, fileType, "native", MPI_INFO_NULL);
-        MPI_File_write_all(fpWrite, grid[0][0], 1, subgridType, MPI_STATUS_IGNORE);
-        MPI_File_close(&fpWrite);
-    }
 
 //    if (PRINT_MODE && cartRank == 0) printTable(grid[0], totalRows, totalColumns);
 
@@ -446,27 +459,13 @@ int main(int argc, char **argv) {
     //////////////                    Free Resources                    //////////////
     //////////////////////////////////////////////////////////////////////////////////
 
-    MPI_Type_free(&rowType);
-    MPI_Type_free(&columnType);
-
-    MPI_Type_free(&subgridType);
-    MPI_Type_free(&fileType);
-
-    MPI_Comm_free(&cartComm);
-
-    free(splitter[ROW]);
-
-    for (currentGrid = 0; currentGrid < 2; ++currentGrid) {
-        free(grid[currentGrid][0]);
-        free(grid[currentGrid]);
-    }
+    cleanUp(&cartComm, &rowType, &columnType, &subgridType, &fileType, grid, splitter);
 
     ////////////////////////////////////////////////////////////////////////////
     //////////////                    Finalize                    //////////////
     ////////////////////////////////////////////////////////////////////////////
 
     MPI_Finalize();
-
     return EXIT_SUCCESS;
 }
 
@@ -474,9 +473,27 @@ void printTable(float **grid, int totalRows, int totalColumns) {
     printf("\n");
     for (int currentRow = 0; currentRow < totalRows; ++currentRow) {
         for (int currentColumn = 0; currentColumn < totalColumns; ++currentColumn) {
-            printf("%.5f\t", grid[currentRow][currentColumn]);
+            printf("%.1f\t", grid[currentRow][currentColumn]);
         }
         printf("\n");
     }
     printf("\n");
+}
+
+void cleanUp(MPI_Comm *cartComm, MPI_Datatype *rowType, MPI_Datatype *columnType, MPI_Datatype *subgridType, MPI_Datatype *fileType, float ***grid, int **splitter) {
+    MPI_Type_free(rowType);
+    MPI_Type_free(columnType);
+
+    MPI_Type_free(subgridType);
+    MPI_Type_free(fileType);
+
+    MPI_Comm_free(cartComm);
+
+    if (splitter != 0)
+        free(splitter[ROW]);
+
+    for (int currentGrid = 0; currentGrid < 2; ++currentGrid) {
+        free(grid[currentGrid][0]);
+        free(grid[currentGrid]);
+    }
 }
