@@ -6,9 +6,6 @@
 #define FALSE           0
 #define TRUE            1
 
-#define EXEC_STEPS      10000
-#define CONV_FREQ_STEPS 10
-
 #define NORTH           0
 #define SOUTH           1
 #define WEST            2
@@ -45,6 +42,9 @@ int main(int argc, char **argv) {
 
     int version, subversion;
 
+    int steps;
+    int convFreqSteps;
+
     int createData = 0;
     int convergenceCheck = 0;
     int fullProblemSize[DIMENSIONALITY];
@@ -80,13 +80,15 @@ int main(int argc, char **argv) {
     //////////////                    Argument Check                    //////////////
     //////////////////////////////////////////////////////////////////////////////////
 
-    if (argc == 4) {
-        fullProblemSize[ROW] = atoi(argv[1]);
-        fullProblemSize[COLUMN] = atoi(argv[2]);
-        convergenceCheck = atoi(argv[3]);
-    } else if (argc == 3) {
-        fullProblemSize[ROW] = atoi(argv[1]);
-        fullProblemSize[COLUMN] = atoi(argv[2]);
+    if (argc == 5) {
+        steps = atoi(argv[1]);
+        fullProblemSize[ROW] = atoi(argv[2]);
+        fullProblemSize[COLUMN] = atoi(argv[3]);
+        convergenceCheck = atoi(argv[4]);
+    } else if (argc == 4) {
+        steps = atoi(argv[1]);
+        fullProblemSize[ROW] = atoi(argv[2]);
+        fullProblemSize[COLUMN] = atoi(argv[3]);
         createData = 1;
     } else {
         if (UAT_MODE) {
@@ -99,6 +101,7 @@ int main(int argc, char **argv) {
             exit(EXIT_FAILURE);
         }
     }
+    convFreqSteps = (int) sqrt(steps);
 
     //////////////////////////////////////////////////////////////////////////////////
     //////////////                    Topology Setup                    //////////////
@@ -354,11 +357,14 @@ int main(int argc, char **argv) {
 //#pragma omp parallel default(none) private(currentStep, currentRow, currentColumn, tempCounter, u1, u2) shared(grid, splitter[ROW], splitter[COLUMN], currentConvergenceCheck, convergenceCheck, currentNeighbor, currentGrid, request, cartComm, globalConvergence, localConvergence, totalRows, totalColumns, splitterCount, parms, ompi_mpi_op_land, ompi_mpi_int)
 #pragma omp parallel private(currentStep, currentRow, currentColumn, tempCounter, u1, u2)
     {
-        for (currentStep = 0; currentStep < EXEC_STEPS; ++currentStep) {
+        for (currentStep = 0; currentStep < steps; ++currentStep) {
 
 #pragma omp single
             {
-                currentConvergenceCheck = convergenceCheck && currentStep % CONV_FREQ_STEPS == 0;
+                printf("currentGrid: %d\n", currentGrid);
+//                if (currentStep % convFreqSteps == 0) printTable(grid[currentGrid], totalRows, totalColumns);
+
+                currentConvergenceCheck = convergenceCheck && currentStep % convFreqSteps == 0;
 
                 for (currentNeighbor = 0; currentNeighbor < 4; ++currentNeighbor) {
                     MPI_Start(&request[RECEIVE][currentGrid][currentNeighbor]);
