@@ -56,6 +56,8 @@ int main(int argc, char **argv) {
     int currentRow, currentColumn;
     int currentGrid;
 
+    int rc;
+
     //////////////////////////////////////////////////////////////////////////////////
     //////////////                    MPI Init/Print                    //////////////
     //////////////////////////////////////////////////////////////////////////////////
@@ -232,10 +234,17 @@ int main(int argc, char **argv) {
 //    if (PRINT_MODE && cartRank == 0) printTable(grid[0], totalRows, totalColumns);
 
     MPI_File fpRead;
-    MPI_File_open(cartComm, inputFileName, MPI_MODE_RDONLY, MPI_INFO_NULL, &fpRead);
+    rc = MPI_File_open(cartComm, inputFileName, MPI_MODE_RDONLY, MPI_INFO_NULL, &fpRead);
     MPI_File_set_view(fpRead, 0, subgridType, fileType, "native", MPI_INFO_NULL);
     MPI_File_read_all(fpRead, grid[0][0], 1, subgridType, MPI_STATUS_IGNORE);
     MPI_File_close(&fpRead);
+
+    if (rc) {
+        printf("Unable to open file \"%s\"\n", inputFileName);
+        cleanUp(&cartComm, &rowType, &columnType, &subgridType, &fileType, grid, 0);
+        MPI_Finalize();
+        return EXIT_FAILURE;
+    }
 
 //    if (PRINT_MODE && cartRank == 0) printTable(grid[0], totalRows, totalColumns);
 
