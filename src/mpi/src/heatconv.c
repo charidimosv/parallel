@@ -203,15 +203,19 @@ int main(int argc, char **argv) {
             grid[currentGrid][currentRow] = &grid[currentGrid][0][currentRow * totalColumns];
     }
 
-    if (createData && commSize == 1) {
+    if (createData) {
+        int tempRow, tempColumn;
         for (currentRow = 0; currentRow < totalRows; currentRow++)
             for (currentColumn = 0; currentColumn < totalColumns; currentColumn++) {
+                tempRow = startArray[ROW] + currentRow;
+                tempColumn = startArray[COLUMN] + currentColumn;
+
                 if (currentRow == 0 || currentColumn == 0 || currentRow == totalRows - 1 || currentColumn == totalColumns - 1)
                     grid[0][currentRow][currentColumn] = 0;
                 else
-                    grid[0][currentRow][currentColumn] = (float) ((currentRow - 1) * (totalRows - currentRow - 2) * (currentColumn - 1) * (totalColumns - currentColumn - 2));
+                    grid[0][currentRow][currentColumn] = (float) ((tempRow - 1) * (fullProblemSize[ROW] - tempRow) * (tempColumn - 1) * (fullProblemSize[COLUMN] - tempColumn));
             }
-        if (PRINT_MODE) printTable(grid[0], totalRows, totalColumns);
+        if (PRINT_MODE && cartRank == 0) printTable(grid[0], totalRows, totalColumns);
 
         MPI_File fpWrite;
         MPI_File_open(cartComm, inputFileName, MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &fpWrite);
