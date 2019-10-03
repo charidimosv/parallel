@@ -151,11 +151,13 @@ int main(int argc, char **argv) {
     }
 
     if (PRINT_MODE && cartRank == 0)
-        printf("Splitting Problem:\n\tFull Problem Size: %dx%d\n\tTopology Dimension: %dx%d\n\tSub Problem Size: %dx%d\n\n",
+        printf("Splitting Info:\n\tFull Problem Size: %dx%d\n\tTopology Dimension: %dx%d\n\tSub Problem Size: %dx%d\n\n",
                fullProblemSize[ROW], fullProblemSize[COLUMN], topologyDimension[ROW], topologyDimension[COLUMN], subProblemSize[ROW], subProblemSize[COLUMN]);
 
     int totalRows = subProblemSize[ROW] + HALO_OFFSET;
     int totalColumns = subProblemSize[COLUMN] + HALO_OFFSET;
+    int workingRows = subProblemSize[ROW];
+    int workingColumns = subProblemSize[COLUMN];
 
     MPI_Type_vector(subProblemSize[COLUMN], 1, 1, MPI_FLOAT, &rowType);
     MPI_Type_vector(subProblemSize[ROW], 1, totalColumns, MPI_FLOAT, &columnType);
@@ -199,7 +201,7 @@ int main(int argc, char **argv) {
     snprintf(inputFileName, 256, "../io/initial_%d_%d.dat", fullProblemSize[ROW], fullProblemSize[COLUMN]);
     snprintf(outputFileName, 256, "../io/final_%d_%d.dat", fullProblemSize[ROW], fullProblemSize[COLUMN]);
 
-    float *u1, *u2;
+    float *oldGrid, *nextGrid;
     float **grid[2];
     for (currentGrid = 0; currentGrid < 2; ++currentGrid) {
         grid[currentGrid] = (float **) malloc(sizeof(float *) * (totalRows));
@@ -354,16 +356,13 @@ int main(int argc, char **argv) {
     MPI_Barrier(cartComm);
     startTime = MPI_Wtime();
 
-//#pragma omp parallel default(none) private(currentStep, currentRow, currentColumn, tempCounter, u1, u2) shared(grid, splitter[ROW], splitter[COLUMN], currentConvergenceCheck, convergenceCheck, currentNeighbor, currentGrid, request, cartComm, globalConvergence, localConvergence, totalRows, totalColumns, splitterCount, parms, ompi_mpi_op_land, ompi_mpi_int)
+//#pragma omp parallel default(none) private(currentStep, currentRow, currentColumn, tempCounter, oldGrid, nextGrid) shared(grid, splitter[ROW], splitter[COLUMN], currentConvergenceCheck, convergenceCheck, currentNeighbor, currentGrid, request, cartComm, globalConvergence, localConvergence, totalRows, totalColumns, splitterCount, parms, ompi_mpi_op_land, ompi_mpi_int)
 #pragma omp parallel private(currentStep, currentRow, currentColumn, tempCounter, u1, u2)
     {
         for (currentStep = 0; currentStep < steps; ++currentStep) {
 
 #pragma omp single
             {
-                printf("currentGrid: %d\n", currentGrid);
-//                if (currentStep % convFreqSteps == 0) printTable(grid[currentGrid], totalRows, totalColumns);
-
                 currentConvergenceCheck = convergenceCheck && currentStep % convFreqSteps == 0;
 
                 for (currentNeighbor = 0; currentNeighbor < 4; ++currentNeighbor) {
@@ -372,33 +371,35 @@ int main(int argc, char **argv) {
                 }
             }
 
-            u1 = grid[currentGrid][0];
-            u2 = grid[1 - currentGrid][0];
+            oldGrid = grid[currentGrid][0];
+            nextGrid = grid[1 - currentGrid][0];
 
             if (currentConvergenceCheck) {
 #pragma omp for schedule(static) collapse(DIMENSIONALITY) reduction(&&:localConvergence)
-                for (currentRow = 2; currentRow < totalRows - 1; ++currentRow)
-                    for (currentColumn = 2; currentColumn < totalColumns - 1; ++currentColumn) {
-                        *(u2 + currentRow * totalColumns + currentColumn) = *(u1 + currentRow * totalColumns + currentColumn) +
-                                                                            parms.cx * (*(u1 + (currentRow + 1) * totalColumns + currentColumn) +
-                                                                                        *(u1 + (currentRow - 1) * totalColumns + currentColumn) -
-                                                                                        2.0 * *(u1 + currentRow * totalColumns + currentColumn)) +
-                                                                            parms.cy * (*(u1 + currentRow * totalColumns + currentColumn + 1) +
-                                                                                        *(u1 + currentRow * totalColumns + currentColumn - 1) -
-                                                                                        2.0 * *(u1 + currentRow * totalColumns + currentColumn));
-                        localConvergence = localConvergence && (fabs(*(u2 + currentRow * totalColumns + currentColumn) - *(u1 + currentRow * totalColumns + currentColumn)) < 1e-4);
+                for (currentRow = 2; currentRow < workingRows; ++currentRow)
+                    for (currentColumn = 2; currentColumn < workingColumns; ++currentColumn) {
+                        if ((*(oldGrid + currentRow * totalColumns + currentColumn) != 0))
+                            *(nextGrid + currentRow * totalColumns + currentColumn) = *(oldGrid + currentRow * totalColumns + currentColumn) +
+                                                                                parms.cx * (*(oldGrid + (currentRow + 1) * totalColumns + currentColumn) +
+                                                                                            *(oldGrid + (currentRow - 1) * totalColumns + currentColumn) -
+                                                                                            2.0 * *(oldGrid + currentRow * totalColumns + currentColumn)) +
+                                                                                parms.cy * (*(oldGrid + currentRow * totalColumns + currentColumn + 1) +
+                                                                                            *(oldGrid + currentRow * totalColumns + currentColumn - 1) -
+                                                                                            2.0 * *(oldGrid + currentRow * totalColumns + currentColumn));
+                        localConvergence = localConvergence && (fabs(*(nextGrid + currentRow * totalColumns + currentColumn) - *(oldGrid + currentRow * totalColumns + currentColumn)) < 1e-4);
                     }
             } else {
 #pragma omp for schedule(static) collapse(DIMENSIONALITY)
-                for (currentRow = 2; currentRow < totalRows - 1; ++currentRow)
-                    for (currentColumn = 2; currentColumn < totalColumns - 1; ++currentColumn) {
-                        *(u2 + currentRow * totalColumns + currentColumn) = *(u1 + currentRow * totalColumns + currentColumn) +
-                                                                            parms.cx * (*(u1 + (currentRow + 1) * totalColumns + currentColumn) +
-                                                                                        *(u1 + (currentRow - 1) * totalColumns + currentColumn) -
-                                                                                        2.0 * *(u1 + currentRow * totalColumns + currentColumn)) +
-                                                                            parms.cy * (*(u1 + currentRow * totalColumns + currentColumn + 1) +
-                                                                                        *(u1 + currentRow * totalColumns + currentColumn - 1) -
-                                                                                        2.0 * *(u1 + currentRow * totalColumns + currentColumn));
+                for (currentRow = 2; currentRow < workingRows; ++currentRow)
+                    for (currentColumn = 2; currentColumn < workingColumns; ++currentColumn) {
+                        if ((*(oldGrid + currentRow * totalColumns + currentColumn) != 0))
+                            *(nextGrid + currentRow * totalColumns + currentColumn) = *(oldGrid + currentRow * totalColumns + currentColumn) +
+                                                                                parms.cx * (*(oldGrid + (currentRow + 1) * totalColumns + currentColumn) +
+                                                                                            *(oldGrid + (currentRow - 1) * totalColumns + currentColumn) -
+                                                                                            2.0 * *(oldGrid + currentRow * totalColumns + currentColumn)) +
+                                                                                parms.cy * (*(oldGrid + currentRow * totalColumns + currentColumn + 1) +
+                                                                                            *(oldGrid + currentRow * totalColumns + currentColumn - 1) -
+                                                                                            2.0 * *(oldGrid + currentRow * totalColumns + currentColumn));
                     }
             }
 
@@ -410,28 +411,30 @@ int main(int argc, char **argv) {
             if (currentConvergenceCheck) {
 #pragma omp for schedule(static) reduction(&&:localConvergence)
                 for (tempCounter = 0; tempCounter < splitterCount; ++tempCounter) {
-                    *(u2 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) =
-                            *(u1 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) +
-                            parms.cx * (*(u1 + ((*(rowSplitter + tempCounter)) + 1) * totalColumns + (*(columnSplitter + tempCounter))) +
-                                        *(u1 + ((*(rowSplitter + tempCounter)) - 1) * totalColumns + (*(columnSplitter + tempCounter))) -
-                                        2.0 * *(u1 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)))) +
-                            parms.cy * (*(u1 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)) + 1) +
-                                        *(u1 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)) - 1) -
-                                        2.0 * *(u1 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))));
-                    localConvergence = localConvergence && (fabs(*(u2 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) -
-                                                                 *(u1 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)))) < 1e-4);
+                    if (*(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) != 0)
+                        *(nextGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) =
+                                *(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) +
+                                parms.cx * (*(oldGrid + ((*(rowSplitter + tempCounter)) + 1) * totalColumns + (*(columnSplitter + tempCounter))) +
+                                            *(oldGrid + ((*(rowSplitter + tempCounter)) - 1) * totalColumns + (*(columnSplitter + tempCounter))) -
+                                            2.0 * *(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)))) +
+                                parms.cy * (*(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)) + 1) +
+                                            *(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)) - 1) -
+                                            2.0 * *(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))));
+                    localConvergence = localConvergence && (fabs(*(nextGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) -
+                                                                 *(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)))) < 1e-4);
                 }
             } else {
 #pragma omp for schedule(static)
                 for (tempCounter = 0; tempCounter < splitterCount; ++tempCounter) {
-                    *(u2 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) =
-                            *(u1 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) +
-                            parms.cx * (*(u1 + ((*(rowSplitter + tempCounter)) + 1) * totalColumns + (*(columnSplitter + tempCounter))) +
-                                        *(u1 + ((*(rowSplitter + tempCounter)) - 1) * totalColumns + (*(columnSplitter + tempCounter))) -
-                                        2.0 * *(u1 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)))) +
-                            parms.cy * (*(u1 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)) + 1) +
-                                        *(u1 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)) - 1) -
-                                        2.0 * *(u1 + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))));
+                    if (*(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) != 0)
+                        *(nextGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) =
+                                *(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) +
+                                parms.cx * (*(oldGrid + ((*(rowSplitter + tempCounter)) + 1) * totalColumns + (*(columnSplitter + tempCounter))) +
+                                            *(oldGrid + ((*(rowSplitter + tempCounter)) - 1) * totalColumns + (*(columnSplitter + tempCounter))) -
+                                            2.0 * *(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)))) +
+                                parms.cy * (*(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)) + 1) +
+                                            *(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)) - 1) -
+                                            2.0 * *(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))));
                 }
             }
 
