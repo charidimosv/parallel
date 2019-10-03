@@ -307,20 +307,16 @@ int main(int argc, char **argv) {
 
     for (currentGrid = 0; currentGrid < 2; ++currentGrid) {
         MPI_Send_init(&grid[currentGrid][1][1], 1, rowType, neighbors[NORTH], cartRank, cartComm, &request[SEND][currentGrid][NORTH]);
-        MPI_Recv_init(&grid[currentGrid][0][1], 1, rowType, neighbors[NORTH], neighbors[NORTH] == MPI_PROC_NULL ? cartRank : neighbors[NORTH], cartComm,
-                      &request[RECEIVE][currentGrid][NORTH]);
+        MPI_Recv_init(&grid[currentGrid][0][1], 1, rowType, neighbors[NORTH], neighbors[NORTH] == MPI_PROC_NULL ? cartRank : neighbors[NORTH], cartComm, &request[RECEIVE][currentGrid][NORTH]);
 
         MPI_Send_init(&grid[currentGrid][totalRows - 2][1], 1, rowType, neighbors[SOUTH], cartRank, cartComm, &request[SEND][currentGrid][SOUTH]);
-        MPI_Recv_init(&grid[currentGrid][totalRows - 1][1], 1, rowType, neighbors[SOUTH], neighbors[SOUTH] == MPI_PROC_NULL ? cartRank : neighbors[SOUTH], cartComm,
-                      &request[RECEIVE][currentGrid][SOUTH]);
+        MPI_Recv_init(&grid[currentGrid][totalRows - 1][1], 1, rowType, neighbors[SOUTH], neighbors[SOUTH] == MPI_PROC_NULL ? cartRank : neighbors[SOUTH], cartComm, &request[RECEIVE][currentGrid][SOUTH]);
 
         MPI_Send_init(&grid[currentGrid][1][1], 1, columnType, neighbors[WEST], cartRank, cartComm, &request[SEND][currentGrid][WEST]);
-        MPI_Recv_init(&grid[currentGrid][1][0], 1, columnType, neighbors[WEST], neighbors[WEST] == MPI_PROC_NULL ? cartRank : neighbors[WEST], cartComm,
-                      &request[RECEIVE][currentGrid][WEST]);
+        MPI_Recv_init(&grid[currentGrid][1][0], 1, columnType, neighbors[WEST], neighbors[WEST] == MPI_PROC_NULL ? cartRank : neighbors[WEST], cartComm, &request[RECEIVE][currentGrid][WEST]);
 
-        MPI_Send_init(&grid[currentGrid][1][totalRows - 2], 1, columnType, neighbors[EAST], cartRank, cartComm, &request[SEND][currentGrid][EAST]);
-        MPI_Recv_init(&grid[currentGrid][1][totalRows - 1], 1, columnType, neighbors[EAST], neighbors[EAST] == MPI_PROC_NULL ? cartRank : neighbors[EAST], cartComm,
-                      &request[RECEIVE][currentGrid][EAST]);
+        MPI_Send_init(&grid[currentGrid][1][totalColumns - 2], 1, columnType, neighbors[EAST], cartRank, cartComm, &request[SEND][currentGrid][EAST]);
+        MPI_Recv_init(&grid[currentGrid][1][totalColumns - 1], 1, columnType, neighbors[EAST], neighbors[EAST] == MPI_PROC_NULL ? cartRank : neighbors[EAST], cartComm, &request[RECEIVE][currentGrid][EAST]);
     }
 
     /////////////////////////////////////////////////////////////////////////////
@@ -359,28 +355,28 @@ int main(int argc, char **argv) {
 #pragma omp for schedule(static) collapse(DIMENSIONALITY) reduction(&&:localConvergence)
                 for (currentRow = 2; currentRow < workingRows; ++currentRow)
                     for (currentColumn = 2; currentColumn < workingColumns; ++currentColumn) {
-                        if ((*(oldGrid + currentRow * totalColumns + currentColumn) != 0))
-                            *(nextGrid + currentRow * totalColumns + currentColumn) = *(oldGrid + currentRow * totalColumns + currentColumn) +
-                                                                                      parms.cx * (*(oldGrid + (currentRow + 1) * totalColumns + currentColumn) +
-                                                                                                  *(oldGrid + (currentRow - 1) * totalColumns + currentColumn) -
-                                                                                                  2.0 * *(oldGrid + currentRow * totalColumns + currentColumn)) +
-                                                                                      parms.cy * (*(oldGrid + currentRow * totalColumns + currentColumn + 1) +
-                                                                                                  *(oldGrid + currentRow * totalColumns + currentColumn - 1) -
-                                                                                                  2.0 * *(oldGrid + currentRow * totalColumns + currentColumn));
+//                        if ((*(oldGrid + currentRow * totalColumns + currentColumn) > 1e-4))
+                        *(nextGrid + currentRow * totalColumns + currentColumn) = *(oldGrid + currentRow * totalColumns + currentColumn) +
+                                                                                  parms.cx * (*(oldGrid + (currentRow + 1) * totalColumns + currentColumn) +
+                                                                                              *(oldGrid + (currentRow - 1) * totalColumns + currentColumn) -
+                                                                                              2.0 * *(oldGrid + currentRow * totalColumns + currentColumn)) +
+                                                                                  parms.cy * (*(oldGrid + currentRow * totalColumns + currentColumn + 1) +
+                                                                                              *(oldGrid + currentRow * totalColumns + currentColumn - 1) -
+                                                                                              2.0 * *(oldGrid + currentRow * totalColumns + currentColumn));
                         localConvergence = localConvergence && (fabs(*(nextGrid + currentRow * totalColumns + currentColumn) - *(oldGrid + currentRow * totalColumns + currentColumn)) < 1e-5);
                     }
             } else {
 #pragma omp for schedule(static) collapse(DIMENSIONALITY)
                 for (currentRow = 2; currentRow < workingRows; ++currentRow)
                     for (currentColumn = 2; currentColumn < workingColumns; ++currentColumn) {
-                        if ((*(oldGrid + currentRow * totalColumns + currentColumn) != 0))
-                            *(nextGrid + currentRow * totalColumns + currentColumn) = *(oldGrid + currentRow * totalColumns + currentColumn) +
-                                                                                      parms.cx * (*(oldGrid + (currentRow + 1) * totalColumns + currentColumn) +
-                                                                                                  *(oldGrid + (currentRow - 1) * totalColumns + currentColumn) -
-                                                                                                  2.0 * *(oldGrid + currentRow * totalColumns + currentColumn)) +
-                                                                                      parms.cy * (*(oldGrid + currentRow * totalColumns + currentColumn + 1) +
-                                                                                                  *(oldGrid + currentRow * totalColumns + currentColumn - 1) -
-                                                                                                  2.0 * *(oldGrid + currentRow * totalColumns + currentColumn));
+//                        if ((*(oldGrid + currentRow * totalColumns + currentColumn) > 1e-4))
+                        *(nextGrid + currentRow * totalColumns + currentColumn) = *(oldGrid + currentRow * totalColumns + currentColumn) +
+                                                                                  parms.cx * (*(oldGrid + (currentRow + 1) * totalColumns + currentColumn) +
+                                                                                              *(oldGrid + (currentRow - 1) * totalColumns + currentColumn) -
+                                                                                              2.0 * *(oldGrid + currentRow * totalColumns + currentColumn)) +
+                                                                                  parms.cy * (*(oldGrid + currentRow * totalColumns + currentColumn + 1) +
+                                                                                              *(oldGrid + currentRow * totalColumns + currentColumn - 1) -
+                                                                                              2.0 * *(oldGrid + currentRow * totalColumns + currentColumn));
                     }
             }
 
@@ -392,7 +388,7 @@ int main(int argc, char **argv) {
             if (currentConvergenceCheck) {
 #pragma omp for schedule(static) reduction(&&:localConvergence)
                 for (tempCounter = 0; tempCounter < splitterCount; ++tempCounter) {
-                    if (*(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) != 0)
+                    if (*(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) > 1e-4)
                         *(nextGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) =
                                 *(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) +
                                 parms.cx * (*(oldGrid + ((*(rowSplitter + tempCounter)) + 1) * totalColumns + (*(columnSplitter + tempCounter))) +
@@ -407,7 +403,7 @@ int main(int argc, char **argv) {
             } else {
 #pragma omp for schedule(static)
                 for (tempCounter = 0; tempCounter < splitterCount; ++tempCounter) {
-                    if (*(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) != 0)
+                    if (*(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) > 1e-4)
                         *(nextGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) =
                                 *(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) +
                                 parms.cx * (*(oldGrid + ((*(rowSplitter + tempCounter)) + 1) * totalColumns + (*(columnSplitter + tempCounter))) +
@@ -455,7 +451,7 @@ int main(int argc, char **argv) {
     MPI_File fpWrite;
     MPI_File_open(cartComm, outputFileName, MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &fpWrite);
     MPI_File_set_view(fpWrite, 0, subgridType, fileType, "native", MPI_INFO_NULL);
-    MPI_File_write_all(fpWrite, grid[0][0], 1, subgridType, MPI_STATUS_IGNORE);
+    MPI_File_write_all(fpWrite, grid[currentGrid][0], 1, subgridType, MPI_STATUS_IGNORE);
     MPI_File_close(&fpWrite);
 
     //////////////////////////////////////////////////////////////////////////////////
