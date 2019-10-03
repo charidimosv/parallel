@@ -42,7 +42,7 @@ int main(int argc, char **argv) {
 
     int version, subversion;
 
-    int steps;
+    int steps = 1;
     int convFreqSteps;
 
     int createData = 0;
@@ -85,10 +85,9 @@ int main(int argc, char **argv) {
         fullProblemSize[ROW] = atoi(argv[2]);
         fullProblemSize[COLUMN] = atoi(argv[3]);
         convergenceCheck = atoi(argv[4]);
-    } else if (argc == 4) {
-        steps = atoi(argv[1]);
-        fullProblemSize[ROW] = atoi(argv[2]);
-        fullProblemSize[COLUMN] = atoi(argv[3]);
+    } else if (argc == 3) {
+        fullProblemSize[ROW] = atoi(argv[1]);
+        fullProblemSize[COLUMN] = atoi(argv[2]);
         createData = 1;
     } else {
         if (UAT_MODE) {
@@ -324,24 +323,6 @@ int main(int argc, char **argv) {
                       &request[RECEIVE][currentGrid][EAST]);
     }
 
-    ///////////////////////////////////////////////////////////////////////////////
-    //////////////                    Print Setup                    //////////////
-    ///////////////////////////////////////////////////////////////////////////////
-
-//    if (PRINT_MODE && cartRank == 0) {
-//        printf("Printing boarders:\n");
-//        for (tempCounter = 0; tempCounter < splitterCount; ++tempCounter) {
-//            printf("\t%dx%d\n", splitter[ROW][tempCounter], splitter[COLUMN][tempCounter]);
-//        }
-//    }
-
-//    if (PRINT_MODE && cartRank == 0) {
-//        printf("CommRank: %d, CartRank: %d, Coords: %dx%d. EAST: %d, WEST: %d, SOUTH: %d, NORTH: %d. My problem is %dx%d\n",
-//               commRank, cartRank, currentCoords[ROW], currentCoords[COLUMN], neighbors[EAST], neighbors[WEST], neighbors[SOUTH], neighbors[NORTH], subProblemSize[ROW],
-//               subProblemSize[COLUMN]);
-//        printTable(grid[0], totalRows, totalColumns);
-//    }
-
     /////////////////////////////////////////////////////////////////////////////
     //////////////                    Main loop                    //////////////
     /////////////////////////////////////////////////////////////////////////////
@@ -357,7 +338,7 @@ int main(int argc, char **argv) {
     startTime = MPI_Wtime();
 
 //#pragma omp parallel default(none) private(currentStep, currentRow, currentColumn, tempCounter, oldGrid, nextGrid) shared(grid, splitter[ROW], splitter[COLUMN], currentConvergenceCheck, convergenceCheck, currentNeighbor, currentGrid, request, cartComm, globalConvergence, localConvergence, totalRows, totalColumns, splitterCount, parms, ompi_mpi_op_land, ompi_mpi_int)
-#pragma omp parallel private(currentStep, currentRow, currentColumn, tempCounter, u1, u2)
+#pragma omp parallel private(currentStep, currentRow, currentColumn, tempCounter, oldGrid, nextGrid)
     {
         for (currentStep = 0; currentStep < steps; ++currentStep) {
 
@@ -380,13 +361,13 @@ int main(int argc, char **argv) {
                     for (currentColumn = 2; currentColumn < workingColumns; ++currentColumn) {
                         if ((*(oldGrid + currentRow * totalColumns + currentColumn) != 0))
                             *(nextGrid + currentRow * totalColumns + currentColumn) = *(oldGrid + currentRow * totalColumns + currentColumn) +
-                                                                                parms.cx * (*(oldGrid + (currentRow + 1) * totalColumns + currentColumn) +
-                                                                                            *(oldGrid + (currentRow - 1) * totalColumns + currentColumn) -
-                                                                                            2.0 * *(oldGrid + currentRow * totalColumns + currentColumn)) +
-                                                                                parms.cy * (*(oldGrid + currentRow * totalColumns + currentColumn + 1) +
-                                                                                            *(oldGrid + currentRow * totalColumns + currentColumn - 1) -
-                                                                                            2.0 * *(oldGrid + currentRow * totalColumns + currentColumn));
-                        localConvergence = localConvergence && (fabs(*(nextGrid + currentRow * totalColumns + currentColumn) - *(oldGrid + currentRow * totalColumns + currentColumn)) < 1e-4);
+                                                                                      parms.cx * (*(oldGrid + (currentRow + 1) * totalColumns + currentColumn) +
+                                                                                                  *(oldGrid + (currentRow - 1) * totalColumns + currentColumn) -
+                                                                                                  2.0 * *(oldGrid + currentRow * totalColumns + currentColumn)) +
+                                                                                      parms.cy * (*(oldGrid + currentRow * totalColumns + currentColumn + 1) +
+                                                                                                  *(oldGrid + currentRow * totalColumns + currentColumn - 1) -
+                                                                                                  2.0 * *(oldGrid + currentRow * totalColumns + currentColumn));
+                        localConvergence = localConvergence && (fabs(*(nextGrid + currentRow * totalColumns + currentColumn) - *(oldGrid + currentRow * totalColumns + currentColumn)) < 1e-5);
                     }
             } else {
 #pragma omp for schedule(static) collapse(DIMENSIONALITY)
@@ -394,12 +375,12 @@ int main(int argc, char **argv) {
                     for (currentColumn = 2; currentColumn < workingColumns; ++currentColumn) {
                         if ((*(oldGrid + currentRow * totalColumns + currentColumn) != 0))
                             *(nextGrid + currentRow * totalColumns + currentColumn) = *(oldGrid + currentRow * totalColumns + currentColumn) +
-                                                                                parms.cx * (*(oldGrid + (currentRow + 1) * totalColumns + currentColumn) +
-                                                                                            *(oldGrid + (currentRow - 1) * totalColumns + currentColumn) -
-                                                                                            2.0 * *(oldGrid + currentRow * totalColumns + currentColumn)) +
-                                                                                parms.cy * (*(oldGrid + currentRow * totalColumns + currentColumn + 1) +
-                                                                                            *(oldGrid + currentRow * totalColumns + currentColumn - 1) -
-                                                                                            2.0 * *(oldGrid + currentRow * totalColumns + currentColumn));
+                                                                                      parms.cx * (*(oldGrid + (currentRow + 1) * totalColumns + currentColumn) +
+                                                                                                  *(oldGrid + (currentRow - 1) * totalColumns + currentColumn) -
+                                                                                                  2.0 * *(oldGrid + currentRow * totalColumns + currentColumn)) +
+                                                                                      parms.cy * (*(oldGrid + currentRow * totalColumns + currentColumn + 1) +
+                                                                                                  *(oldGrid + currentRow * totalColumns + currentColumn - 1) -
+                                                                                                  2.0 * *(oldGrid + currentRow * totalColumns + currentColumn));
                     }
             }
 
@@ -421,7 +402,7 @@ int main(int argc, char **argv) {
                                             *(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)) - 1) -
                                             2.0 * *(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))));
                     localConvergence = localConvergence && (fabs(*(nextGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) -
-                                                                 *(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)))) < 1e-4);
+                                                                 *(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)))) < 1e-5);
                 }
             } else {
 #pragma omp for schedule(static)
@@ -464,7 +445,7 @@ int main(int argc, char **argv) {
 
     if (cartRank == 0) {
         printf("Runtime: %f sec\n", endTime - startTime);
-        printf("Convergence:\n\tachieved: %s\n\tstep: %d\n", globalConvergence ? "YES" : "NO", convergenceStep);
+        printf("Convergence:\n\tchecking: %s\n\tachieved: %s\n\tstep: %d\n", convergenceCheck ? "YES" : "NO", globalConvergence ? "YES" : "NO", convergenceStep);
     }
 
     /////////////////////////////////////////////////////////////////////////////////
