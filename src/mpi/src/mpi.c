@@ -40,6 +40,7 @@ void cleanUp(MPI_Comm *cartComm, MPI_Datatype *rowType, MPI_Datatype *columnType
 int main(int argc, char **argv) {
     int commRank;
     int commSize;
+    int threadNum = 1;
 
     char processorName[MPI_MAX_PROCESSOR_NAME];
     int processorNameLen;
@@ -78,8 +79,8 @@ int main(int argc, char **argv) {
         printf("- MPI/OMP Info\n");
         printf("-- version: %d.%d\n", version, subversion);
         printf("-- processor name: %s\n", processorName);
-        printf("-- MPI_COMM_WORLD Size: %d\n\n", commSize);
-//        printf("-- Thread Pool Size: %d\n\n", omp_get_num_procs());
+        printf("-- MPI_COMM_WORLD Size: %d\n", commSize);
+        printf("-- Thread Pool Size: %d\n\n", threadNum);
     }
 
     //////////////////////////////////////////////////////////////////////////////////
@@ -156,7 +157,8 @@ int main(int argc, char **argv) {
     }
 
     if (cartRank == MASTER) {
-        printf("- Splitting Info:\n");
+        printf("- Execution Info:\n");
+        printf("-- Steps: %d\n", steps);
         printf("-- Full Problem Size: %dx%d\n", fullProblemSize[ROW], fullProblemSize[COLUMN]);
         printf("-- Topology Dimension: %dx%d\n", topologyDimension[ROW], topologyDimension[COLUMN]);
         printf("-- Sub Problem Size: %dx%d\n\n", subProblemSize[ROW], subProblemSize[COLUMN]);
@@ -207,7 +209,7 @@ int main(int argc, char **argv) {
     char inputFileName[256];
     char outputFileName[256];
     snprintf(inputFileName, 256, "../io/initial_%d_%d.dat", fullProblemSize[ROW], fullProblemSize[COLUMN]);
-    snprintf(outputFileName, 256, "../io/final_%d_%d.dat", fullProblemSize[ROW], fullProblemSize[COLUMN]);
+    snprintf(outputFileName, 256, "../io/final_%d_%d__STEPS_%d__PROCS_%d__THREADS_%d.dat", fullProblemSize[ROW], fullProblemSize[COLUMN], steps, commSize, threadNum);
 
     float *oldGrid, *nextGrid;
     float **grid[2];

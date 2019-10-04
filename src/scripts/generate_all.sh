@@ -7,6 +7,7 @@
 createScripts=0
 runScripts=0
 useMpi=0
+useMpiConv=0
 useOpenMP=0
 
 while [[ $# -gt 0 ]]; do
@@ -16,7 +17,12 @@ while [[ $# -gt 0 ]]; do
     shift
     ;;
 
-  -op)
+  -mpiC)
+    useMpiConv=1
+    shift
+    ;;
+
+  -omp)
     useOpenMP=1
     shift
     ;;
@@ -45,26 +51,29 @@ nodesList='1 2 8 16 20'
 ppnList='2 4 8'
 threadsList='1 2 4 8 16 32'
 
-#initialDimension_x=80
-#initialDimension_y=64
-
 initialDimension_x=80
-initialDimension_y=80
+initialDimension_y=64
 
-maxDimensionDoubling=3
+#initialDimension_x=16
+#initialDimension_y=16
 
-mpiExecFileName="mpi_heat2D.x"
-openmpExecFileName="mpi_heat2D.x"
+steps=10000
 
-scriptFolderName="scripts"
+maxDimensionDoubling=9
+
+#scriptFolderName="scripts"
+
+mpiExecFileName="mpi.x"
+mpiConvExecFileName="mpi_conv.x"
+openmpExecFileName="omp.x"
 
 ########################################
 ####        Every occurrence        ####
 ########################################
 
-if [[ (${createScripts} == 1 || ${runScripts} == 1) && (${useMpi} == 1 || ${useOpenMP} == 1) ]]; then
-  mkdir -p ${scriptFolderName}
-fi
+#if [[ (${createScripts} == 1 || ${runScripts} == 1) && (${useMpi} == 1 || ${useOpenMP} == 1) ]]; then
+#  mkdir -p ${scriptFolderName}
+#fi
 
 for nodes in ${nodesList}; do
   for ppn in ${ppnList}; do
@@ -74,6 +83,10 @@ for nodes in ${nodesList}; do
     fi
 
     for threads in ${threadsList}; do
+      if [[ $((threads * ppn)) -gt 8 ]]; then
+        continue
+      fi
+
       printf "Ts${tasks}: N${nodes} x P${ppn} x T${threads}\n"
 
       currentDimension_x=${initialDimension_x}
@@ -82,23 +95,32 @@ for nodes in ${nodesList}; do
       for ((i = 0; i < maxDimensionDoubling; i++)); do
         printf "\t${currentDimension_x}x${currentDimension_y}\n"
 
-        jobName="Ts${tasks}__N${nodes}_P${ppn}_T${threads}__X${currentDimension_x}_Y${currentDimension_y}"
+        jobName="Ts${tasks}__N${nodes}_P${ppn}_T${threads}__X${currentDimension_x}_Y${currentDimension_y}__"
 
         mpiJobName="mpi__${jobName}"
-        mpiScriptName="${scriptFolderName}/${mpiJobName}.sh"
+        mpiScriptName="${mpiJobName}.sh"
+
+        mpiConvJobName="mpiConv__${jobName}"
+        mpiConvScriptName="${mpiConvJobName}.sh"
 
         openmpJobName="openmp__${jobName}"
-        openmpScriptName="${scriptFolderName}/${openmpJobName}.sh"
+        openmpScriptName="${openmpJobName}.sh"
 
         if [[ ${createScripts} == 1 ]]; then
           if [[ ${useMpi} == 1 && ${threads} == 1 ]]; then
-            ./generate_single.sh ${mpiJobName} ${tasks} ${nodes} ${ppn} ${threads} ${currentDimension_x} ${currentDimension_y} ${mpiExecFileName} >${mpiScriptName}
+            ./generate_single.sh ${mpiJobName} ${tasks} ${nodes} ${ppn} ${threads} ${steps} ${currentDimension_x} ${currentDimension_y} 0 ${mpiExecFileName} >${mpiScriptName}
             chmod 770 ${mpiScriptName}
             printf "\t\tMPI Script created\n"
           fi
 
+          if [[ ${useMpiConv} == 1 && ${threads} == 1 ]]; then
+            ./generate_single.sh ${mpiConvJobName} ${tasks} ${nodes} ${ppn} ${threads} ${steps} ${currentDimension_x} ${currentDimension_y} 1 ${mpiConvExecFileName} >${mpiConvScriptName}
+            chmod 770 ${mpiConvScriptName}
+            printf "\t\tMPI Convergence Script created\n"
+          fi
+
           if [[ ${useOpenMP} == 1 ]]; then
-            ./generate_single.sh ${openmpJobName} ${tasks} ${nodes} ${ppn} ${threads} ${currentDimension_x} ${currentDimension_y} ${openmpExecFileName} >${openmpScriptName}
+            ./generate_single.sh ${openmpJobName} ${tasks} ${nodes} ${ppn} ${threads} ${steps} ${currentDimension_x} ${currentDimension_y} 1 ${openmpExecFileName} >${openmpScriptName}
             chmod 770 ${openmpScriptName}
             printf "\t\tOpenMP Script created\n"
           fi
@@ -108,6 +130,11 @@ for nodes in ${nodesList}; do
           if [[ ${useMpi} == 1 && ${threads} == 1 ]]; then
             qsub ${mpiScriptName}
             printf "\t\tMPI Script ran\n"
+          fi
+
+          if [[ ${useMpiConv} == 1 && ${threads} == 1 ]]; then
+            qsub ${mpiConvScriptName}
+            printf "\t\tMPI Convergence Script ran\n"
           fi
 
           if [[ ${useOpenMP} == 1 ]]; then

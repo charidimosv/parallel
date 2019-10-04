@@ -34,7 +34,7 @@ cat <<EOF
 #PBS -l pvmem=2G
 
 # Max Wall time
-#PBS -l walltime=0:01:00  		# Example, 1 minute
+#PBS -l walltime=1:01:00  		# Example, 1 hour and 1 minute
 
 # How many nodes and tasks per node
 #PBS -l nodes=${NODES}:ppn=8  			# ${NODES} nodes with ${PPN} tasks/node => ${TASKS} tasks
@@ -48,7 +48,7 @@ cat <<EOF
 #PBS -k oe
 
 #Change Working directory to SUBMIT directory
-cd \$PBS_O_WORKDIR  			# THIS IS MANDATORY,  PBS Starts everything from \$HOME, one should change to submit directory
+cd ~/exec  			# THIS IS MANDATORY,  PBS Starts everything from \$HOME, one should change to submit directory
 
 #OpenMP Threads
 export OMP_NUM_THREADS=${THREADS}
