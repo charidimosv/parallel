@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <mpi.h>
+#include <omp.h>
 
 #define FALSE           0
 #define TRUE            1
@@ -12,15 +13,18 @@
 #define EAST            3
 
 #define DIMENSIONALITY  2
+#define HALO_OFFSET     2
+
 #define ROW             0
 #define COLUMN          1
-#define HALO_OFFSET     2
 
 #define SEND            0
 #define RECEIVE         1
 
 #define UAT_MODE        0
 #define PRINT_MODE      0
+
+#define MASTER          0
 
 
 struct Parms {
@@ -70,10 +74,12 @@ int main(int argc, char **argv) {
     MPI_Comm_size(MPI_COMM_WORLD, &commSize);
     MPI_Comm_rank(MPI_COMM_WORLD, &commRank);
 
-    if (PRINT_MODE && commRank == 0) {
-        printf("MPI_COMM_WORLD Size: %d\n", commSize);
-        printf("MPI version: %d.%d\n", version, subversion);
-        printf("MPI processor name: %s\n\n", processorName);
+    if (commRank == MASTER) {
+        printf("- MPI/OMP Info\n");
+        printf("-- version: %d.%d\n", version, subversion);
+        printf("-- processor name: %s\n", processorName);
+        printf("-- MPI_COMM_WORLD Size: %d\n", commSize);
+        printf("-- Thread Pool Size: %d\n\n", omp_get_num_procs());
     }
 
     //////////////////////////////////////////////////////////////////////////////////
@@ -149,9 +155,12 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    if (PRINT_MODE && cartRank == 0)
-        printf("Splitting Info:\n\tFull Problem Size: %dx%d\n\tTopology Dimension: %dx%d\n\tSub Problem Size: %dx%d\n\n",
-               fullProblemSize[ROW], fullProblemSize[COLUMN], topologyDimension[ROW], topologyDimension[COLUMN], subProblemSize[ROW], subProblemSize[COLUMN]);
+    if (cartRank == MASTER) {
+        printf("- Splitting Info:\n");
+        printf("-- Full Problem Size: %dx%d\n", fullProblemSize[ROW], fullProblemSize[COLUMN]);
+        printf("-- Topology Dimension: %dx%d\n", topologyDimension[ROW], topologyDimension[COLUMN]);
+        printf("-- Sub Problem Size: %dx%d\n\n", subProblemSize[ROW], subProblemSize[COLUMN]);
+    }
 
     int totalRows = subProblemSize[ROW] + HALO_OFFSET;
     int totalColumns = subProblemSize[COLUMN] + HALO_OFFSET;
@@ -221,7 +230,7 @@ int main(int argc, char **argv) {
                 else
                     grid[0][currentRow][currentColumn] = (float) ((tempRow - 1) * (fullProblemSize[ROW] - tempRow) * (tempColumn - 1) * (fullProblemSize[COLUMN] - tempColumn));
             }
-        if (PRINT_MODE && cartRank == 0) printTable(grid[0], totalRows, totalColumns);
+        if (PRINT_MODE && cartRank == MASTER) printTable(grid[0], totalRows, totalColumns);
 
         MPI_File fpWrite;
         MPI_File_open(cartComm, inputFileName, MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &fpWrite);
@@ -235,7 +244,7 @@ int main(int argc, char **argv) {
         return EXIT_SUCCESS;
     }
 
-//    if (PRINT_MODE && cartRank == 0) printTable(grid[0], totalRows, totalColumns);
+//    if (PRINT_MODE && cartRank == MASTER) printTable(grid[0], totalRows, totalColumns);
 
     MPI_File fpRead;
     rc = MPI_File_open(cartComm, inputFileName, MPI_MODE_RDONLY, MPI_INFO_NULL, &fpRead);
@@ -250,7 +259,7 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
-//    if (PRINT_MODE && cartRank == 0) printTable(grid[0], totalRows, totalColumns);
+//    if (PRINT_MODE && cartRank == MASTER) printTable(grid[0], totalRows, totalColumns);
 
     for (currentGrid = 0; currentGrid < 2; ++currentGrid) {
         if (neighbors[NORTH] == MPI_PROC_NULL)
@@ -270,7 +279,7 @@ int main(int argc, char **argv) {
                 grid[currentGrid][currentRow][totalColumns - 1] = 0;
     }
 
-//    if (PRINT_MODE && cartRank == 0) printTable(grid[0], totalRows, totalColumns);
+//    if (PRINT_MODE && cartRank == MASTER) printTable(grid[0], totalRows, totalColumns);
 
     ///////////////////////////////////////////////////////////////////////////////////////
     //////////////                    Initialise Boarders                    //////////////
@@ -439,9 +448,14 @@ int main(int argc, char **argv) {
     endTime = MPI_Wtime();
     MPI_Barrier(cartComm);
 
-    if (cartRank == 0) {
-        printf("Runtime: %f sec\n", endTime - startTime);
-        printf("Convergence:\n\tchecking: %s\n\tachieved: %s\n\tstep: %d\n", convergenceCheck ? "YES" : "NO", globalConvergence ? "YES" : "NO", convergenceStep);
+    if (cartRank == MASTER) {
+        printf("Results:\n");
+        printf("- Runtime: %f sec\n", endTime - startTime);
+
+        printf("- Convergence:\n");
+        printf("-- checking: %s\n", convergenceCheck ? "YES" : "NO");
+        printf("-- achieved: %s\n", globalConvergence ? "YES" : "NO");
+        printf("-- at step: %d\n", convergenceStep);
     }
 
     /////////////////////////////////////////////////////////////////////////////////
