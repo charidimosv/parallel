@@ -59,7 +59,7 @@ initialDimension_y=64
 
 steps=10000
 
-maxDimensionDoubling=9
+maxDimensionDoubling=7
 
 #scriptFolderName="scripts"
 

@@ -75,7 +75,7 @@ int main(int argc, char **argv) {
     MPI_Comm_size(MPI_COMM_WORLD, &commSize);
     MPI_Comm_rank(MPI_COMM_WORLD, &commRank);
 
-    threadNum = omp_get_num_procs();
+    threadNum = omp_get_num_threads();
 
     if (commRank == MASTER) {
         printf("- MPI/OMP Info\n");
