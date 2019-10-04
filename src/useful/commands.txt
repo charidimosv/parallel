@@ -1,0 +1,13 @@
+Useful Commands
+------------------------------------------------------------------------
+hexdump -v -e '16/4 "%5.0f "' -e '"\n"' initialize.dat
+------------------------------------------------------------------------
+qsub myPBSScript.sh
+qstat
+qstat | grep psdi
+qdel <id>
+------------------------------------------------------------------------
+module load openmpi mpiP
+------------------------------------------------------------------------
+mpicc -O3 -std=c99 heatconv.c -o heatconv.x
+mpicc -O3 -std=c99 -fopenmp heatconv.c -o heatconv.x

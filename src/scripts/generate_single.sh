@@ -11,10 +11,12 @@ NODES=$3
 PPN=$4
 THREADS=$5
 
-DIMENSION_X=$6
-DIMENSION_Y=$7
+STEPS=$6
+DIMENSION_X=$7
+DIMENSION_Y=$8
+CONVERGENCE=$9
 
-EXEC_FILENAME=$8
+EXEC_FILENAME=${10}
 
 FLAGS="-np ${TASKS}"
 if [[ ${THREADS} != 1 ]]; then
@@ -56,7 +58,7 @@ export OMP_NUM_THREADS=${THREADS}
 # Having modules mpiP and openmpi loaded i.e.
 module load mpiP openmpi
 
-mpirun ${FLAGS} ${EXEC_FILENAME} ${DIMENSION_X} ${DIMENSION_Y}				# That was compiled on front-end
+mpirun ${FLAGS} ${EXEC_FILENAME} ${STEPS} ${DIMENSION_X} ${DIMENSION_Y} ${CONVERGENCE}				# That was compiled on front-end
 
 
 # No need for -np -machinefile etc. MPI gets this information from PBS
