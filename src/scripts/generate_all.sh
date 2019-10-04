@@ -95,7 +95,7 @@ for nodes in ${nodesList}; do
       for ((i = 0; i < maxDimensionDoubling; i++)); do
         printf "\t${currentDimension_x}x${currentDimension_y}\n"
 
-        jobName="Ts${tasks}__N${nodes}_P${ppn}_T${threads}__X${currentDimension_x}_Y${currentDimension_y}__"
+        jobName="Ts${tasks}__N${nodes}_P${ppn}_T${threads}__X${currentDimension_x}_Y${currentDimension_y}__S_${steps}"
 
         mpiJobName="mpi__${jobName}"
         mpiScriptName="${mpiJobName}.sh"
