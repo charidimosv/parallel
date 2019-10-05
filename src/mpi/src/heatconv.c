@@ -75,16 +75,6 @@ int main(int argc, char **argv) {
     MPI_Comm_size(MPI_COMM_WORLD, &commSize);
     MPI_Comm_rank(MPI_COMM_WORLD, &commRank);
 
-    threadNum = omp_get_num_threads();
-
-    if (commRank == MASTER) {
-        printf("- MPI/OMP Info\n");
-        printf("-- version: %d.%d\n", version, subversion);
-        printf("-- processor name: %s\n", processorName);
-        printf("-- MPI_COMM_WORLD Size: %d\n", commSize);
-        printf("-- Thread Pool Size: %d\n\n", threadNum);
-    }
-
     //////////////////////////////////////////////////////////////////////////////////
     //////////////                    Argument Check                    //////////////
     //////////////////////////////////////////////////////////////////////////////////
@@ -349,6 +339,18 @@ int main(int argc, char **argv) {
 //#pragma omp parallel default(none) private(currentStep, currentRow, currentColumn, tempCounter, oldGrid, nextGrid) shared(grid, splitter[ROW], splitter[COLUMN], currentConvergenceCheck, convergenceCheck, currentNeighbor, currentGrid, request, cartComm, globalConvergence, localConvergence, totalRows, totalColumns, splitterCount, parms, ompi_mpi_op_land, ompi_mpi_int)
 #pragma omp parallel private(currentStep, currentRow, currentColumn, tempCounter, oldGrid, nextGrid)
     {
+#pragma omp single
+        {
+            threadNum = omp_get_num_threads();
+            if (cartRank == MASTER) {
+                printf("- MPI/OMP Info\n");
+                printf("-- version: %d.%d\n", version, subversion);
+                printf("-- processor name: %s\n", processorName);
+                printf("-- MPI_COMM_WORLD Size: %d\n", commSize);
+                printf("-- Thread Pool Size: %d\n\n", threadNum);
+            }
+        }
+
         for (currentStep = 0; currentStep < steps; ++currentStep) {
 
 #pragma omp single
