@@ -337,7 +337,7 @@ int main(int argc, char **argv) {
     startTime = MPI_Wtime();
 
 //#pragma omp parallel default(none) private(currentStep, currentRow, currentColumn, tempCounter, oldGrid, nextGrid) shared(grid, splitter[ROW], splitter[COLUMN], currentConvergenceCheck, convergenceCheck, currentNeighbor, currentGrid, request, cartComm, globalConvergence, localConvergence, totalRows, totalColumns, splitterCount, parms, ompi_mpi_op_land, ompi_mpi_int)
-#pragma omp parallel private(currentStep, currentRow, currentColumn, tempCounter, oldGrid, nextGrid)
+#pragma omp parallel private(currentStep, currentRow, currentColumn, tempCounter)
     {
 #pragma omp single
         {

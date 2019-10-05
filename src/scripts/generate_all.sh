@@ -83,9 +83,9 @@ for nodes in ${nodesList}; do
     fi
 
     for threads in ${threadsList}; do
-      if [[ $((threads * ppn)) -gt 8 ]]; then
-        continue
-      fi
+#      if [[ $((threads * ppn)) -gt 8 ]]; then
+#        continue
+#      fi
 
       printf "Ts${tasks}: N${nodes} x P${ppn} x T${threads}\n"
 
