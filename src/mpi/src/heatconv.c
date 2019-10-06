@@ -378,7 +378,7 @@ int main(int argc, char **argv) {
                                                                                   parms.cy * (*(oldGrid + currentRow * totalColumns + currentColumn + 1) +
                                                                                               *(oldGrid + currentRow * totalColumns + currentColumn - 1) -
                                                                                               2.0 * *(oldGrid + currentRow * totalColumns + currentColumn));
-                        localConvergence = localConvergence && (fabs(*(nextGrid + currentRow * totalColumns + currentColumn) - *(oldGrid + currentRow * totalColumns + currentColumn)) < 1e-3);
+                        localConvergence = localConvergence && (fabs(*(nextGrid + currentRow * totalColumns + currentColumn) - *(oldGrid + currentRow * totalColumns + currentColumn)) < 1e-2);
                     }
             } else {
 #pragma omp for schedule(static) collapse(DIMENSIONALITY)
@@ -413,7 +413,7 @@ int main(int argc, char **argv) {
                                             *(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)) - 1) -
                                             2.0 * *(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))));
                     localConvergence = localConvergence && (fabs(*(nextGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) -
-                                                                 *(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)))) < 1e-3);
+                                                                 *(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)))) < 1e-2);
                 }
             } else {
 #pragma omp for schedule(static)

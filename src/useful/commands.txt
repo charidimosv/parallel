@@ -19,7 +19,8 @@ mpicc -O3 -std=c99 ~/src/mpi.c -o ~/exec/mpi.x
 mpicc -O3 -std=c99 ~/src/mpi_conv.c -o ~/exec/mpi_conv.x
 mpicc -O3 -std=c99 -fopenmp ~/src/omp.c -o ~/exec/omp.x
 ------------------------------------------------------------------------
-cd ~/generate; ./generate_all.sh -cs -mpi -mpiC -omp
+cd ~/generate; ./generate_all.sh -cs -mpi -mpiC -omp -kotr
+
 00 01-11 * * * cd ~/generate; ./generate_all.sh -rs -mpi
 20 01-11 * * * cd ~/generate; ./generate_all.sh -rs -mpiC
 40 01-11 * * * cd ~/generate; ./generate_all.sh -rs -omp

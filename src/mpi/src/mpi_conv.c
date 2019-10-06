@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <math.h>
 #include <mpi.h>
-//#include <omp.h>
 
 #define FALSE           0
 #define TRUE            1
@@ -336,10 +335,6 @@ int main(int argc, char **argv) {
     MPI_Barrier(cartComm);
     startTime = MPI_Wtime();
 
-//#pragma omp parallel default(none) private(currentStep, currentRow, currentColumn, tempCounter, oldGrid, nextGrid) shared(grid, splitter[ROW], splitter[COLUMN], currentConvergenceCheck, convergenceCheck, currentNeighbor, currentGrid, request, cartComm, globalConvergence, localConvergence, totalRows, totalColumns, splitterCount, parms, ompi_mpi_op_land, ompi_mpi_int)
-//#pragma omp parallel private(currentStep, currentRow, currentColumn, tempCounter, oldGrid, nextGrid)
-//    {
-
     if (cartRank == MASTER) {
         printf("- MPI/OMP Info\n");
         printf("-- version: %d.%d\n", version, subversion);
@@ -350,21 +345,17 @@ int main(int argc, char **argv) {
 
     for (currentStep = 0; currentStep < steps; ++currentStep) {
 
-//#pragma omp single
-//        {
         currentConvergenceCheck = convergenceCheck && currentStep % convFreqSteps == 0;
 
         for (currentNeighbor = 0; currentNeighbor < 4; ++currentNeighbor) {
             MPI_Start(&request[RECEIVE][currentGrid][currentNeighbor]);
             MPI_Start(&request[SEND][currentGrid][currentNeighbor]);
         }
-//        }
 
         oldGrid = grid[currentGrid][0];
         nextGrid = grid[1 - currentGrid][0];
 
         if (currentConvergenceCheck) {
-//#pragma omp for schedule(static) collapse(DIMENSIONALITY) reduction(&&:localConvergence)
             for (currentRow = 2; currentRow < workingRows; ++currentRow)
                 for (currentColumn = 2; currentColumn < workingColumns; ++currentColumn) {
 //                        if ((*(oldGrid + currentRow * totalColumns + currentColumn) > 1e-4))
@@ -375,10 +366,9 @@ int main(int argc, char **argv) {
                                                                               parms.cy * (*(oldGrid + currentRow * totalColumns + currentColumn + 1) +
                                                                                           *(oldGrid + currentRow * totalColumns + currentColumn - 1) -
                                                                                           2.0 * *(oldGrid + currentRow * totalColumns + currentColumn));
-                    localConvergence = localConvergence && (fabs(*(nextGrid + currentRow * totalColumns + currentColumn) - *(oldGrid + currentRow * totalColumns + currentColumn)) < 1e-3);
+                    localConvergence = localConvergence && (fabs(*(nextGrid + currentRow * totalColumns + currentColumn) - *(oldGrid + currentRow * totalColumns + currentColumn)) < 1e-2);
                 }
         } else {
-//#pragma omp for schedule(static) collapse(DIMENSIONALITY)
             for (currentRow = 2; currentRow < workingRows; ++currentRow)
                 for (currentColumn = 2; currentColumn < workingColumns; ++currentColumn) {
 //                        if ((*(oldGrid + currentRow * totalColumns + currentColumn) > 1e-4))
@@ -392,13 +382,9 @@ int main(int argc, char **argv) {
                 }
         }
 
-//#pragma omp single
-//        {
         MPI_Waitall(4, request[RECEIVE][currentGrid], MPI_STATUS_IGNORE);
-//        }
 
         if (currentConvergenceCheck) {
-//#pragma omp for schedule(static) reduction(&&:localConvergence)
             for (tempCounter = 0; tempCounter < splitterCount; ++tempCounter) {
                 if (*(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) > 1e-4)
                     *(nextGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) =
@@ -410,10 +396,9 @@ int main(int argc, char **argv) {
                                         *(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)) - 1) -
                                         2.0 * *(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))));
                 localConvergence = localConvergence && (fabs(*(nextGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) -
-                                                                 *(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)))) < 1e-3);
+                                                             *(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter)))) < 1e-2);
             }
         } else {
-//#pragma omp for schedule(static)
             for (tempCounter = 0; tempCounter < splitterCount; ++tempCounter) {
                 if (*(oldGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) > 1e-4)
                     *(nextGrid + (*(rowSplitter + tempCounter)) * totalColumns + (*(columnSplitter + tempCounter))) =
@@ -427,8 +412,6 @@ int main(int argc, char **argv) {
             }
         }
 
-//#pragma omp single
-//        {
         if (currentConvergenceCheck) {
             MPI_Allreduce(&localConvergence, &globalConvergence, 1, MPI_INT, MPI_LAND, cartComm);
             localConvergence = TRUE;
@@ -436,17 +419,12 @@ int main(int argc, char **argv) {
 
         MPI_Waitall(4, request[SEND][currentGrid], MPI_STATUS_IGNORE);
         currentGrid = 1 - currentGrid;
-//        }
 
         if (globalConvergence == TRUE) {
-//#pragma omp single
-//            {
             convergenceStep = currentStep;
-//            }
             break;
         }
     }
-//    }
 
     MPI_Barrier(cartComm);
     endTime = MPI_Wtime();

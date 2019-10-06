@@ -89,9 +89,9 @@ for nodes in ${nodesList}; do
       continue
     fi
 
-#    if [[ $((tasks)) -gt 9 ]]; then
-#      continue
-#    fi
+    #    if [[ $((tasks)) -gt 9 ]]; then
+    #      continue
+    #    fi
 
     for threads in ${threadsList}; do
       #      if [[ $((threads * ppn)) -gt 8 ]]; then
