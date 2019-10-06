@@ -448,8 +448,8 @@ int main(int argc, char **argv) {
     }
 //    }
 
-    endTime = MPI_Wtime();
     MPI_Barrier(cartComm);
+    endTime = MPI_Wtime();
 
     if (cartRank == MASTER) {
         printf("Results:\n");

@@ -26,9 +26,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define NXPROB      1280                 /* x dimension of problem grid */
-#define NYPROB      1024                 /* y dimension of problem grid */
-#define STEPS       10000                /* number of time steps */
+//#define NXPROB      1280                 /* x dimension of problem grid */
+//#define NYPROB      1024                 /* y dimension of problem grid */
+//#define STEPS       10000                /* number of time steps */
 #define MAXWORKER   8                  /* maximum number of worker tasks */
 #define MINWORKER   3                  /* minimum number of worker tasks */
 #define BEGIN       1                  /* message tag */
@@ -45,7 +45,8 @@ struct Parms {
 
 int main(int argc, char *argv[]) {
     void inidat(), prtdat(), update();
-    float u[2][NXPROB][NYPROB];        /* array for grid */
+    int NYPROB, NXPROB, STEPS;
+    float **u[2];
     int taskid,                     /* this task's unique id */
             numworkers,                 /* number of worker processes */
             numtasks,                   /* number of tasks */
@@ -57,6 +58,22 @@ int main(int argc, char *argv[]) {
             i, ix, iy, iz, it;              /* loop variables */
     MPI_Status status;
 
+    if (argc == 5) {
+        STEPS = atoi(argv[1]);
+        NXPROB = atoi(argv[2]);
+        NYPROB = atoi(argv[3]);
+    } else {
+        STEPS = 1000;
+        NXPROB = 80;
+        NYPROB = 64;
+    }
+
+    for (int currentGrid = 0; currentGrid < 2; ++currentGrid) {
+        u[currentGrid] = (float **) malloc(sizeof(float *) * (NXPROB));
+        u[currentGrid][0] = (float *) malloc(sizeof(float) * (NXPROB * NYPROB));
+        for (int currentRow = 1; currentRow < NXPROB; ++currentRow)
+            u[currentGrid][currentRow] = &u[currentGrid][0][currentRow * NYPROB];
+    }
 
 /* First, find out my taskid and how many tasks are running */
     MPI_Init(&argc, &argv);
@@ -67,6 +84,8 @@ int main(int argc, char *argv[]) {
     if (taskid == MASTER) {
         /************************* master code *******************************/
         /* Check if numworkers is within range - quit if not */
+
+
         if ((numworkers > MAXWORKER) || (numworkers < MINWORKER)) {
             printf("ERROR: the number of tasks must be between %d and %d.\n",
                    MINWORKER + 1, MAXWORKER + 1);
@@ -79,14 +98,18 @@ int main(int argc, char *argv[]) {
         /* Initialize grid */
         printf("Grid size: X= %d  Y= %d  Time steps= %d\n", NXPROB, NYPROB, STEPS);
         printf("Initializing grid and writing initial.dat file...\n");
-        inidat(NXPROB, NYPROB, u);
-        prtdat(NXPROB, NYPROB, u, "initial.dat");
+        for (int currentGrid = 0; currentGrid < 2; ++currentGrid) {
+            inidat(NXPROB, NYPROB, &u[currentGrid][0][0]);
+            prtdat(NXPROB, NYPROB, &u[currentGrid][0][0], "initial.dat");
+        }
 
         /* Distribute work to workers.  Must first figure out how many rows to */
         /* send and what to do with extra rows.  */
         averow = NXPROB / numworkers;
         extra = NXPROB % numworkers;
         offset = 0;
+        double startTime, endTime;
+        startTime = MPI_Wtime();
         for (i = 1; i <= numworkers; i++) {
             rows = (i <= extra) ? averow + 1 : averow;
             /* Tell each worker who its neighbors are, since they must exchange */
@@ -121,12 +144,16 @@ int main(int argc, char *argv[]) {
             MPI_Recv(&u[0][offset][0], rows * NYPROB, MPI_FLOAT, source,
                      msgtype, MPI_COMM_WORLD, &status);
         }
+        endTime = MPI_Wtime();
 
         /* Write final output, call X graph and finalize MPI */
         printf("Writing final.dat file and generating graph...\n");
         prtdat(NXPROB, NYPROB, &u[0][0][0], "final.dat");
         printf("Click on MORE button to view initial/final states.\n");
         printf("Click on EXIT button to quit program.\n");
+
+        printf("Results:\n");
+        printf("- Runtime: %f sec\n", endTime - startTime);
 
         MPI_Finalize();
     }   /* End of master code */

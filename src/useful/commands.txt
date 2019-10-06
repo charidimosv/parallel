@@ -14,6 +14,7 @@ module load openmpi mpiP
 ------------------------------------------------------------------------
 mpicc -O3 -std=c99 heatconv.c -o heatconv.x
 
+mpicc -O3 -std=c99 ~/src/mpi_heat2Dn.c -o ~/exec/kotr.x
 mpicc -O3 -std=c99 ~/src/mpi.c -o ~/exec/mpi.x
 mpicc -O3 -std=c99 ~/src/mpi_conv.c -o ~/exec/mpi_conv.x
 mpicc -O3 -std=c99 -fopenmp ~/src/omp.c -o ~/exec/omp.x

@@ -378,7 +378,7 @@ int main(int argc, char **argv) {
                                                                                   parms.cy * (*(oldGrid + currentRow * totalColumns + currentColumn + 1) +
                                                                                               *(oldGrid + currentRow * totalColumns + currentColumn - 1) -
                                                                                               2.0 * *(oldGrid + currentRow * totalColumns + currentColumn));
-                    localConvergence = localConvergence && (fabs(*(nextGrid + currentRow * totalColumns + currentColumn) - *(oldGrid + currentRow * totalColumns + currentColumn)) < 1e-3);
+                        localConvergence = localConvergence && (fabs(*(nextGrid + currentRow * totalColumns + currentColumn) - *(oldGrid + currentRow * totalColumns + currentColumn)) < 1e-3);
                     }
             } else {
 #pragma omp for schedule(static) collapse(DIMENSIONALITY)
@@ -451,8 +451,8 @@ int main(int argc, char **argv) {
         }
     }
 
-    endTime = MPI_Wtime();
     MPI_Barrier(cartComm);
+    endTime = MPI_Wtime();
 
     if (cartRank == MASTER) {
         printf("Results:\n");

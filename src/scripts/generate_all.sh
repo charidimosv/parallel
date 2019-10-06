@@ -54,7 +54,7 @@ done
 ##############################
 
 nodesList='1 2 8 16 20'
-ppnList='2 4 8'
+ppnList='1 2 4 8'
 threadsList='1 2 4 8 16 32'
 
 initialDimension_x=80
@@ -89,10 +89,14 @@ for nodes in ${nodesList}; do
       continue
     fi
 
+#    if [[ $((tasks)) -gt 9 ]]; then
+#      continue
+#    fi
+
     for threads in ${threadsList}; do
-#      if [[ $((threads * ppn)) -gt 8 ]]; then
-#        continue
-#      fi
+      #      if [[ $((threads * ppn)) -gt 8 ]]; then
+      #        continue
+      #      fi
 
       printf "Ts${tasks}: N${nodes} x P${ppn} x T${threads}\n"
 
@@ -102,7 +106,7 @@ for nodes in ${nodesList}; do
       for ((i = 0; i < maxDimensionDoubling; i++)); do
         printf "\t${currentDimension_x}x${currentDimension_y}\n"
 
-        jobName="Ts${tasks}__N${nodes}_P${ppn}_T${threads}__X${currentDimension_x}_Y${currentDimension_y}__S_${steps}"
+        jobName="X${currentDimension_x}_Y${currentDimension_y}__S_${steps}__Ts${tasks}__N${nodes}_P${ppn}_T${threads}"
 
         mpiJobName="mpi__${jobName}"
         mpiScriptName="${mpiJobName}.sh"
@@ -130,7 +134,7 @@ for nodes in ${nodesList}; do
           fi
 
           if [[ ${useKotronis} == 1 && ${threads} == 1 ]]; then
-            ./generate_single.sh ${kotrJobName} ${tasks} ${nodes} ${ppn} ${threads} ${steps} ${currentDimension_x} ${currentDimension_y} 1 ${kotrExecFileName} >${kotrScriptName}
+            ./generate_single.sh ${kotrJobName} ${tasks} ${nodes} ${ppn} ${threads} ${steps} ${currentDimension_x} ${currentDimension_y} 0 ${kotrExecFileName} >${kotrScriptName}
             chmod 770 ${kotrScriptName}
             printf "\t\tKotronis Script created\n"
           fi
