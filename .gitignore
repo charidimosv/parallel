@@ -5,4 +5,5 @@
 /src/others/
 *.exe
 *.dat
+*.x
 *.stackdump
