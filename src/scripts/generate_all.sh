@@ -72,7 +72,7 @@ maxDimensionDoubling=7
 mpiExecFileName="mpi.x"
 mpiConvExecFileName="mpi_conv.x"
 openmpExecFileName="omp.x"
-kotrExecFileName="omp.x"
+kotrExecFileName="kotr.x"
 
 ########################################
 ####        Every occurrence        ####
