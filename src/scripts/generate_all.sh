@@ -9,6 +9,7 @@ runScripts=0
 useMpi=0
 useMpiConv=0
 useOpenMP=0
+useKotronis=0
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -24,6 +25,11 @@ while [[ $# -gt 0 ]]; do
 
   -omp)
     useOpenMP=1
+    shift
+    ;;
+
+  -kotr)
+    useKotronis=1
     shift
     ;;
 
@@ -66,6 +72,7 @@ maxDimensionDoubling=7
 mpiExecFileName="mpi.x"
 mpiConvExecFileName="mpi_conv.x"
 openmpExecFileName="omp.x"
+kotrExecFileName="omp.x"
 
 ########################################
 ####        Every occurrence        ####
@@ -106,6 +113,9 @@ for nodes in ${nodesList}; do
         openmpJobName="openmp__${jobName}"
         openmpScriptName="${openmpJobName}.sh"
 
+        kotrJobName="kotr__${jobName}"
+        kotrScriptName="${kotrJobName}.sh"
+
         if [[ ${createScripts} == 1 ]]; then
           if [[ ${useMpi} == 1 && ${threads} == 1 ]]; then
             ./generate_single.sh ${mpiJobName} ${tasks} ${nodes} ${ppn} ${threads} ${steps} ${currentDimension_x} ${currentDimension_y} 0 ${mpiExecFileName} >${mpiScriptName}
@@ -117,6 +127,12 @@ for nodes in ${nodesList}; do
             ./generate_single.sh ${mpiConvJobName} ${tasks} ${nodes} ${ppn} ${threads} ${steps} ${currentDimension_x} ${currentDimension_y} 1 ${mpiConvExecFileName} >${mpiConvScriptName}
             chmod 770 ${mpiConvScriptName}
             printf "\t\tMPI Convergence Script created\n"
+          fi
+
+          if [[ ${useKotronis} == 1 && ${threads} == 1 ]]; then
+            ./generate_single.sh ${kotrJobName} ${tasks} ${nodes} ${ppn} ${threads} ${steps} ${currentDimension_x} ${currentDimension_y} 1 ${kotrExecFileName} >${kotrScriptName}
+            chmod 770 ${kotrScriptName}
+            printf "\t\tKotronis Script created\n"
           fi
 
           if [[ ${useOpenMP} == 1 ]]; then
@@ -135,6 +151,11 @@ for nodes in ${nodesList}; do
           if [[ ${useMpiConv} == 1 && ${threads} == 1 ]]; then
             qsub ${mpiConvScriptName}
             printf "\t\tMPI Convergence Script ran\n"
+          fi
+
+          if [[ ${useKotronis} == 1 && ${threads} == 1 ]]; then
+            qsub ${kotrScriptName}
+            printf "\t\tKotronis Convergence Script ran\n"
           fi
 
           if [[ ${useOpenMP} == 1 ]]; then
