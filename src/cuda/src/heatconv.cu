@@ -11,13 +11,15 @@
 struct Parms {
     float cx;
     float cy;
-} parms = {0.1, 0.1};
+};
 
 void printGridToFile(float *grid, const int totalRows, const int totalColumns, const char *fileName);
 
-__global__ void iniData(const int totalRows, const int totalColumns, float *u1, float *u2);
+__global__
+void iniData(const int totalRows, const int totalColumns, float *u1, float *u2);
 
-__global__ void update(const int totalRows, const int totalColumns, const int currentConvergenceCheck, int *convergence, struct Parms *parms, float *oldGrid, float *nextGrid);
+__global__
+void update(const int totalRows, const int totalColumns, const int currentConvergenceCheck, int *convergence, struct Parms *parms, float *oldGrid, float *nextGrid);
 
 int main(int argc, char **argv) {
 
@@ -45,37 +47,31 @@ int main(int argc, char **argv) {
     }
     convFreqSteps = (int) sqrt(steps);
 
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    //////////////                    Unified Memory – accessible from CPU or GPU                    //////////////
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
     int totalGridSize = totalRows * totalColumns;
-    int totalGridBytesSize = sizeof(float) * totalGridSize;
-
-    /////////////////////////////////////////////////////////////////////////////////
-    //////////////                    CPU Variables                    //////////////
-    /////////////////////////////////////////////////////////////////////////////////
-
-    float *grid = (float *) malloc(totalGridBytesSize);
-    int convergenceResult = 0;
-
-    /////////////////////////////////////////////////////////////////////////////////
-    //////////////                    GPU Variables                    //////////////
-    /////////////////////////////////////////////////////////////////////////////////
+    unsigned int totalGridBytesSize = sizeof(float) * totalGridSize;
 
     dim3 dimBlock(THREADS_PER_BLOCK, THREADS_PER_BLOCK);
-    dim3 dimGrid(totalRows/THREADS_PER_BLOCK, totalColumns/THREADS_PER_BLOCK);
+    dim3 dimGrid((totalRows + dimBlock.x - 1) / dimBlock.x, (totalColumns + dimBlock.y - 1) / dimBlock.y);
 
-    float *oddGrid, *evenGrid;
-    struct Parms *gpuParms = NULL;
-    int *gpuConvergenceResult = NULL;
+    float *gridOdd, *gridEven;
+    cudaMallocManaged(&gridOdd, totalGridBytesSize);
+    cudaMallocManaged(&gridEven, totalGridBytesSize);
+    iniData<<<dimGrid, dimBlock>>>(totalRows, totalColumns, gridOdd, gridEven);
 
-    cudaMalloc(&oddGrid, totalGridBytesSize);
-    cudaMalloc(&evenGrid, totalGridBytesSize);
+    cudaDeviceSynchronize();
 
-    iniData<<<dimGrid, dimBlock>>>(totalRows, totalColumns, oddGrid, evenGrid);
+    struct Parms *parms;
+    cudaMallocManaged(&parms, sizeof(struct Parms));
+    parms->cx = 0.1f;
+    parms->cy = 0.1f;
 
-    cudaMalloc(&gpuParms, sizeof(struct Parms));
-    cudaMalloc(&gpuConvergenceResult, sizeof(int));
-
-    cudaMemcpy(gpuParms, &parms, sizeof(struct Parms), cudaMemcpyHostToDevice);
-    cudaMemcpy(gpuConvergenceResult, &convergenceResult, sizeof(int), cudaMemcpyHostToDevice);
+    int *convergenceResult;
+    cudaMallocManaged(&convergenceResult, sizeof(int));
+    *convergenceResult = 1;
 
     /////////////////////////////////////////////////////////////////////////////
     //////////////                    Main loop                    //////////////
@@ -88,45 +84,48 @@ int main(int argc, char **argv) {
         currentConvergenceCheck = convergenceCheck && currentStep % convFreqSteps == 0;
 
         if (currentStep % 2)
-            update<<<dimGrid, dimBlock>>>(totalRows, totalColumns, currentConvergenceCheck, gpuConvergenceResult, gpuParms, evenGrid, oddGrid);
+            update<<<dimGrid, dimBlock>>>(totalRows, totalColumns, currentConvergenceCheck, convergenceResult, parms, gridEven, gridOdd);
         else
-            update<<<dimGrid, dimBlock>>>(totalRows, totalColumns, currentConvergenceCheck, gpuConvergenceResult, gpuParms, oddGrid, evenGrid);
+            update<<<dimGrid, dimBlock>>>(totalRows, totalColumns, currentConvergenceCheck, convergenceResult, parms, gridOdd, gridEven);
+
+        cudaDeviceSynchronize();
 
         if (currentConvergenceCheck) {
-            cudaMemcpy(&convergenceResult, gpuConvergenceResult, sizeof(int), cudaMemcpyDeviceToHost);
-            if (convergenceResult) {
+            if (*convergenceResult) {
                 convergenceStep = currentStep;
                 break;
-            }
+            } else *convergenceResult = 1;
         }
     }
+
     gettimeofday(&timevalEnd, NULL);
 
+    //////////////////////////////////////////////////////////////////////////////////
+    //////////////                    Gather Results                    //////////////
+    //////////////////////////////////////////////////////////////////////////////////
+
     printf("Results:\n");
-    printf("- Runtime: %f sec\n", (timevalEnd.tv_sec - timevalStart.tv_sec) * 1000.0f + (timevalEnd.tv_usec - timevalStart.tv_usec) / 1000.0f);
+    printf("- Runtime: %f sec\n", (float) (timevalEnd.tv_sec - timevalStart.tv_sec) * 1000.0f + (float) (timevalEnd.tv_usec - timevalStart.tv_usec) / 1000.0f);
 
     printf("- Convergence:\n");
     printf("-- checking: %s\n", convergenceCheck ? "YES" : "NO");
-    printf("-- achieved: %s\n", convergenceResult ? "YES" : "NO");
+    printf("-- achieved: %s\n", *convergenceResult ? "YES" : "NO");
     printf("-- at step: %d\n", convergenceStep);
 
     /////////////////////////////////////////////////////////////////////////////////
     //////////////                    Write to FIle                    //////////////
     /////////////////////////////////////////////////////////////////////////////////
 
-    cudaMemcpy(grid, currentStep % 2 ? &oddGrid : &evenGrid, totalGridBytesSize, cudaMemcpyHostToDevice);
-    printGridToFile(grid, totalRows, totalColumns, "final.dat");
+    printGridToFile(currentStep % 2 ? gridOdd : gridEven, totalRows, totalColumns, "final.dat");
 
     //////////////////////////////////////////////////////////////////////////////////
     //////////////                    Free Resources                    //////////////
     //////////////////////////////////////////////////////////////////////////////////
 
-    free(grid);
-
-    cudaFree(evenGrid);
-    cudaFree(oddGrid);
-    cudaFree(gpuParms);
-    cudaFree(gpuConvergenceResult);
+    cudaFree(gridEven);
+    cudaFree(gridOdd);
+    cudaFree(parms);
+    cudaFree(convergenceResult);
 
     ////////////////////////////////////////////////////////////////////////////
     //////////////                    Finalize                    //////////////
@@ -160,10 +159,10 @@ void printGridToFile(float *grid, const int totalRows, const int totalColumns, c
     fclose(fp);
 }
 
-__global__ void iniData(const int totalRows, const int totalColumns, float *u1, float *u2) {
-
-    int currentRow = (blockIdx.x * blockDim.x) + threadIdx.x;
-    int currentColumn = (blockIdx.y * blockDim.y) + threadIdx.y;
+__global__
+void iniData(const int totalRows, const int totalColumns, float *u1, float *u2) {
+    int currentRow = blockIdx.x * blockDim.x + threadIdx.x;
+    int currentColumn = blockIdx.y * blockDim.y + threadIdx.y;
 
     if ((currentRow >= 0 && currentRow < totalRows) && (currentColumn >= 0 && currentColumn < totalColumns)) {
         *(u1 + currentRow * totalColumns + currentColumn) = (float) (currentRow * (totalRows - currentRow - 1) * currentColumn * (totalColumns - currentColumn - 1));
@@ -171,12 +170,12 @@ __global__ void iniData(const int totalRows, const int totalColumns, float *u1, 
     }
 }
 
-__global__ void update(const int totalRows, const int totalColumns, const int currentConvergenceCheck, int *convergence, struct Parms *parms, float *oldGrid, float *nextGrid) {
+__global__
+void update(const int totalRows, const int totalColumns, const int currentConvergenceCheck, int *convergence, struct Parms *parms, float *oldGrid, float *nextGrid) {
+    int currentRow = blockIdx.x * blockDim.x + threadIdx.x;
+    int currentColumn = blockIdx.y * blockDim.y + threadIdx.y;
 
-    int currentRow = (blockIdx.x * blockDim.x) + threadIdx.x;
-    int currentColumn = (blockIdx.y * blockDim.y) + threadIdx.y;
-
-    if ((currentRow > 0 && currentRow < totalRows - 1) && (currentColumn > 0 && currentColumn < totalColumns - 1)) {
+    if (currentRow > 0 && currentRow < totalRows - 1 && currentColumn > 0 && currentColumn < totalColumns - 1) {
         *(nextGrid + currentRow * totalColumns + currentColumn) = *(oldGrid + currentRow * totalColumns + currentColumn) +
                                                                   parms->cx * (*(oldGrid + (currentRow + 1) * totalColumns + currentColumn) +
                                                                                *(oldGrid + (currentRow - 1) * totalColumns + currentColumn) -
@@ -185,7 +184,7 @@ __global__ void update(const int totalRows, const int totalColumns, const int cu
                                                                                *(oldGrid + currentRow * totalColumns + currentColumn - 1) -
                                                                                2.0 * *(oldGrid + currentRow * totalColumns + currentColumn));
 
-        if (currentConvergenceCheck && fabs(*(nextGrid + currentRow * totalColumns + currentColumn) - *(oldGrid + currentRow * totalColumns + currentColumn)) < 1e-2)
-            *convergence = 1;
+        if (currentConvergenceCheck && fabs((double) *(nextGrid + currentRow * totalColumns + currentColumn) - *(oldGrid + currentRow * totalColumns + currentColumn)) > 1e-2)
+            *convergence = 0;
     }
 }
