@@ -3,6 +3,7 @@
 /cmake-build-debug/
 /src/*/output/
 /src/others/
+/src/process_results/results/*
 *.exe
 *.dat
 *.x
