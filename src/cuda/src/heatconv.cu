@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <sys/time.h>
+#include <time.h>
 
 #define FALSE                   0
 #define TRUE                    1
@@ -77,8 +77,7 @@ int main(int argc, char **argv) {
     //////////////                    Main loop                    //////////////
     /////////////////////////////////////////////////////////////////////////////
 
-    struct timeval timevalStart, timevalEnd;
-    gettimeofday(&timevalStart, NULL);
+    time_t begin = time(NULL);
 
     for (currentStep = 0; currentStep < steps; ++currentStep) {
         currentConvergenceCheck = convergenceCheck && currentStep % convFreqSteps == 0;
@@ -98,14 +97,14 @@ int main(int argc, char **argv) {
         }
     }
 
-    gettimeofday(&timevalEnd, NULL);
+    time_t end = time(NULL);
 
     //////////////////////////////////////////////////////////////////////////////////
     //////////////                    Gather Results                    //////////////
     //////////////////////////////////////////////////////////////////////////////////
 
     printf("Results:\n");
-    printf("- Runtime: %f sec\n", (float) (timevalEnd.tv_sec - timevalStart.tv_sec) * 1000.0f + (float) (timevalEnd.tv_usec - timevalStart.tv_usec) / 1000.0f);
+    printf("- Runtime: %lld sec\n", end - begin);
 
     printf("- Convergence:\n");
     printf("-- checking: %s\n", convergenceCheck ? "YES" : "NO");
